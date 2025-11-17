@@ -1,0 +1,41 @@
+workflow_id: network_diagnostics_workflow
+name: Network Diagnostics Workflow
+description: Multi-step workflow for comprehensive network diagnostics
+enabled: true
+steps:
+  - step_id: connectivity_check
+    name: Connectivity Check
+    agent_id: network_diagnostics
+    task: Check network connectivity to the target host
+    depends_on: []
+    context:
+      check_type: ping
+  
+  - step_id: dns_resolution
+    name: DNS Resolution
+    agent_id: network_diagnostics
+    task: Resolve DNS for the target domain
+    depends_on: []
+    context:
+      check_type: dns
+  
+  - step_id: latency_analysis
+    name: Latency Analysis
+    agent_id: network_diagnostics
+    task: Analyze network latency and performance
+    depends_on:
+      - connectivity_check
+    context:
+      check_type: latency
+  
+  - step_id: comprehensive_report
+    name: Comprehensive Report
+    agent_id: network_diagnostics
+    task: Generate comprehensive network diagnostics report based on all previous checks
+    depends_on:
+      - connectivity_check
+      - dns_resolution
+      - latency_analysis
+    context:
+      check_type: report
+

@@ -25,6 +25,10 @@ class ServiceContainer:
         if self._initialized:
             return
         
+        # Initialize database
+        from app.db import init_db
+        init_db()
+        
         # Initialize LLM Manager
         self._llm_manager = LLMManager()
         llm_provider = self._llm_manager.initialize_provider()
@@ -35,6 +39,12 @@ class ServiceContainer:
         # Register agents
         network_agent = NetworkDiagnosticsAgent(llm_provider=llm_provider)
         self._agent_registry.register(network_agent)
+        
+        system_agent = SystemMonitoringAgent(llm_provider=llm_provider)
+        self._agent_registry.register(system_agent)
+        
+        code_review_agent = CodeReviewAgent(llm_provider=llm_provider)
+        self._agent_registry.register(code_review_agent)
         
         # Initialize Orchestrator
         self._orchestrator = Orchestrator(agent_registry=self._agent_registry)

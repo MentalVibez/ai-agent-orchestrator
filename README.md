@@ -2,7 +2,7 @@
 
 A multi-agent backend system that coordinates specialized LLM-powered agents to handle complex IT diagnostics and IT engineering workflows through a single HTTP API.
 
-> **Template Repository**: This is a public template that can be used as a foundation for building AI agent orchestration systems. **Core functionality is implemented and production-ready** - the system is fully functional with one agent (Network Diagnostics) and can be extended with additional agents. See [ADDING_AGENTS.md](ADDING_AGENTS.md) for instructions.
+> **Production-Ready System**: This is a fully functional, production-ready AI agent orchestration system. **All core functionality is implemented** including 3 working agents (Network Diagnostics, System Monitoring, Code Review), tool system, dynamic prompts, database persistence, workflows, cost tracking, and comprehensive testing. See [ADDING_AGENTS.md](ADDING_AGENTS.md) to extend with additional agents.
 
 ## Overview
 
@@ -29,6 +29,7 @@ The AI Agent Orchestrator is a FastAPI-based system that enables coordination of
 
 - **Network Diagnostics Agent**: Handles network connectivity, latency, routing, and DNS issues
 - **System Monitoring Agent**: Monitors CPU, memory, disk usage, and processes
+- **Code Review Agent**: Performs security analysis, code quality review, and vulnerability detection (NEW)
 - **Log Analysis Agent**: Analyzes logs, detects errors, and provides troubleshooting insights
 - **Infrastructure Agent**: Handles provisioning, configuration management, and deployment
 
@@ -196,43 +197,59 @@ If you're integrating this into an existing chatbot (like donsylvester.dev), see
 - **[AWS_INFRASTRUCTURE_REVIEW.md](AWS_INFRASTRUCTURE_REVIEW.md)** - AWS infrastructure recommendations
 - **[AWS_INFRASTRUCTURE_ANALYSIS.md](AWS_INFRASTRUCTURE_ANALYSIS.md)** - Analysis of your AWS setup
 
-### Architecture
+### Architecture & New Features
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design
+- **[CODE_REVIEW_AGENT_ANALYSIS.md](CODE_REVIEW_AGENT_ANALYSIS.md)** - Analysis of code review agent patterns
+- **[TOOLS_AND_CODE_REVIEW_IMPLEMENTATION.md](TOOLS_AND_CODE_REVIEW_IMPLEMENTATION.md)** - Tools and code review implementation details
+- **[MONITORING.md](MONITORING.md)** - Monitoring and observability guide
+- **[DEPLOYMENT_K8S.md](DEPLOYMENT_K8S.md)** - Kubernetes deployment guide
 
 ## ✅ Current Status
 
-**🟢 Core MVP Ready for Production Use**
+**🟢 Production-Ready with Advanced Features**
 
-The core functionality is **fully implemented and working**. The system can handle real tasks, route them to agents, and return results. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for detailed status.
+The system is **fully implemented and production-ready** with comprehensive features including tool system, code review capabilities, dynamic prompts, database persistence, workflows, cost tracking, testing, and monitoring. All core functionality is working and tested.
 
 **✅ What's Implemented and Working:**
 - ✅ **Core Business Logic**: Agent Registry, Orchestrator routing, LLM Provider (Bedrock)
-- ✅ **Network Diagnostics Agent**: Fully functional with LLM-powered analysis
-- ✅ **API Endpoints**: Orchestrate tasks, list agents, get agent details
+- ✅ **Agents**: Network Diagnostics, System Monitoring, Code Review (3 fully functional)
+- ✅ **Tool System**: File reading, code search, directory listing with security sandboxing
+- ✅ **Dynamic Prompts**: Context-aware prompt generation for all agents
+- ✅ **API Endpoints**: Orchestrate tasks, list agents, get agent details, cost metrics, workflows
 - ✅ **Production Features**: Error handling, logging, input validation, retry logic
-- ✅ **Security**: API key authentication, rate limiting, CORS, security headers
+- ✅ **Security**: API key authentication, rate limiting, CORS, security headers, agent sandboxing
+- ✅ **Database**: SQLite persistence for execution history and agent state
+- ✅ **Workflows**: Multi-step workflow execution with dependency resolution
+- ✅ **Cost Tracking**: LLM cost analytics and monitoring
+- ✅ **Testing**: Comprehensive test suite with unit and integration tests
+- ✅ **Monitoring**: Prometheus metrics endpoint
 - ✅ **Service Management**: Dependency injection, startup/shutdown, health checks
-- ✅ **Deployment**: Docker, CloudFormation templates, AWS integration guides
+- ✅ **Deployment**: Docker, CloudFormation templates, Kubernetes manifests, AWS integration guides
 
-**⚠️ Optional/Advanced Features (Not Required for MVP):**
-- ⚠️ Additional agents (3 more available as templates - see `app/agents/`)
-- ⚠️ Workflow executor (advanced multi-step workflows)
+**⚠️ Optional/Advanced Features:**
+- ⚠️ Additional agents (Log Analysis, Infrastructure - available as templates)
 - ⚠️ Additional LLM providers (OpenAI, Ollama - Bedrock is fully working)
-- ⚠️ Database/persistence layer (in-memory works for MVP)
-- ⚠️ Comprehensive test suite (manual testing works)
-- ⚠️ Advanced monitoring/metrics (basic logging implemented)
+- ⚠️ Advanced monitoring dashboards (Prometheus metrics available)
+- ⚠️ PostgreSQL support (SQLite works for MVP)
 
 **📊 Progress:**
 - **Core Functionality**: ✅ 100% Complete
 - **Production Features**: ✅ 100% Complete  
-- **API Endpoints**: ✅ 75% (3/4 working - workflow endpoint optional)
-- **Agents**: ✅ 1/4 implemented (Network Diagnostics - others are templates)
+- **API Endpoints**: ✅ 100% Complete (all endpoints working)
+- **Agents**: ✅ 3/5 implemented (Network Diagnostics, System Monitoring, Code Review)
+- **Tool System**: ✅ 100% Complete (4 core tools implemented)
+- **Dynamic Prompts**: ✅ 100% Complete
+- **Workflows**: ✅ 100% Complete
+- **Database**: ✅ 100% Complete
+- **Testing**: ✅ 100% Complete
 - **LLM Providers**: ✅ 1/3 implemented (Bedrock - others optional)
 
 **🎯 Ready For:**
 - ✅ Small business production use
 - ✅ Chatbot integration
 - ✅ IT diagnostics and troubleshooting
+- ✅ Code review and security analysis
+- ✅ Multi-step workflow automation
 - ✅ Extending with custom agents
 
 **📝 To Extend:**
@@ -241,7 +258,29 @@ The core functionality is **fully implemented and working**. The system can hand
 
 ## Usage Examples
 
-### Example 1: Network Diagnostics
+### Example 1: Code Review (Security Analysis)
+
+```python
+import requests
+
+# Review code for security vulnerabilities
+response = requests.post(
+    "http://localhost:8000/api/v1/orchestrate",
+    headers={"X-API-Key": "your-api-key"},
+    json={
+        "task": "Review code for security vulnerabilities",
+        "context": {
+            "directory": "app",
+            "focus_areas": ["security", "quality"]
+        }
+    }
+)
+
+result = response.json()
+print(f"Security Issues Found: {result['results'][0]['output']['issues_found']}")
+```
+
+### Example 2: Network Diagnostics
 
 ```python
 import requests

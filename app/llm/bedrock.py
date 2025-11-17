@@ -9,6 +9,7 @@ from app.llm.base import LLMProvider
 from app.core.config import settings
 from app.core.retry import retry_async, RetryConfig
 from app.core.exceptions import LLMProviderError
+from app.core.cost_tracker import get_cost_tracker
 import time
 
 
@@ -109,7 +110,32 @@ class BedrockProvider(LLMProvider):
                 
                 # Extract text from Claude response
                 if 'content' in response_body and len(response_body['content']) > 0:
-                    return response_body['content'][0]['text']
+                    text = response_body['content'][0]['text']
+                    
+                    # Track cost (extract usage if available)
+                    usage = response_body.get('usage', {})
+                    input_tokens = usage.get('input_tokens', 0)
+                    output_tokens = usage.get('output_tokens', 0)
+                    
+                    # Record cost (agent_id and endpoint will be added by caller if available)
+                    cost_tracker = get_cost_tracker()
+                    # Get context from thread-local or request context if available
+                    agent_id = getattr(self, '_current_agent_id', None)
+                    endpoint = getattr(self, '_current_endpoint', None)
+                    request_id = getattr(self, '_current_request_id', None)
+                    
+                    cost_tracker.record_cost(
+                        provider="bedrock",
+                        model=self.model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        agent_id=agent_id,
+                        endpoint=endpoint,
+                        request_id=request_id,
+                        metadata={"method": "generate"}
+                    )
+                    
+                    return text
                 else:
                     raise ValueError("Unexpected response format from Bedrock")
                     

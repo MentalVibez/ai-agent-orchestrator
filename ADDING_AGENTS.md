@@ -10,6 +10,9 @@ An agent is a specialized component that handles specific types of tasks. Each a
 - Uses an LLM provider for intelligent responses
 - Has specific capabilities
 - Returns structured `AgentResult` objects
+- **NEW**: Can use tools for file access, code search, and more
+- **NEW**: Benefits from dynamic, context-aware prompt generation
+- **NEW**: Automatically sandboxed with resource limits
 
 ## 🎯 Step-by-Step Instructions
 

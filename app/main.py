@@ -10,7 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from datetime import datetime
 from typing import Dict, Any
 from app.core.config import settings
-from app.api.v1.routes import orchestrator, agents
+from app.api.v1.routes import orchestrator, agents, metrics
 from app.models.request import HealthResponse
 from app.core.rate_limit import limiter, RateLimitExceeded, _rate_limit_exceeded_handler
 from app.core.services import get_service_container
@@ -73,6 +73,18 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             
             # Add request ID to response header
             response.headers["X-Request-ID"] = request_id
+            
+            # Record metrics
+            try:
+                from app.core.metrics import record_http_request
+                record_http_request(
+                    method=request.method,
+                    endpoint=request.url.path,
+                    status_code=response.status_code,
+                    duration=duration
+                )
+            except Exception:
+                pass  # Don't fail on metrics errors
             
             return response
         except Exception as e:
@@ -262,6 +274,7 @@ app.add_middleware(
 # Include API routers
 app.include_router(orchestrator.router)
 app.include_router(agents.router)
+app.include_router(metrics.router)
 
 
 @app.get("/", tags=["root"])

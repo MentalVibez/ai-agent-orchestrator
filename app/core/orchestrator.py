@@ -67,6 +67,11 @@ class Orchestrator:
         if not selected_agent and any(keyword in task_lower for keyword in infra_keywords):
             selected_agent = self.agent_registry.get("infrastructure")
         
+        # Code review keywords
+        code_review_keywords = ['code review', 'security review', 'vulnerability', 'code quality', 'static analysis', 'audit code']
+        if not selected_agent and any(keyword in task_lower for keyword in code_review_keywords):
+            selected_agent = self.agent_registry.get("code_review")
+        
         # If no specific agent found, try to find by capability
         if not selected_agent:
             # Try to find any agent that might handle this
@@ -75,11 +80,39 @@ class Orchestrator:
                 # Default to first available agent (can be enhanced)
                 selected_agent = all_agents[0]
         
-        # Execute the selected agent
+        # Execute the selected agent with sandboxing
         if selected_agent:
             try:
-                result = await selected_agent.execute(task, context)
-                return result
+                from app.core.sandbox import get_sandbox
+                from app.core.resource_limits import get_limits_for_agent
+                
+                sandbox = get_sandbox()
+                limits = get_limits_for_agent(selected_agent.agent_id)
+                
+                # Create or get execution context
+                exec_context = sandbox.get_context(selected_agent.agent_id)
+                if not exec_context:
+                    exec_context = sandbox.create_context(
+                        agent_id=selected_agent.agent_id,
+                        resource_limits=limits
+                    )
+                
+                # Execute with sandbox limits
+                start_time = time.time()
+                with sandbox.execute_with_limits(selected_agent.agent_id, "execute"):
+                    result = await selected_agent.execute(task, context)
+                    
+                    # Save execution history
+                    try:
+                        from app.core.persistence import save_execution_history
+                        execution_time_ms = (time.time() - start_time) * 1000
+                        save_execution_history(result, execution_time_ms=execution_time_ms)
+                    except Exception as e:
+                        # Log but don't fail on persistence errors
+                        import logging
+                        logging.getLogger(__name__).warning(f"Failed to save execution history: {str(e)}")
+                    
+                    return result
             except Exception as e:
                 return AgentResult(
                     agent_id="orchestrator",
@@ -165,6 +198,20 @@ class Orchestrator:
         # Execute agents sequentially (can be enhanced to run in parallel)
         for agent in agents:
             try:
+                from app.core.sandbox import get_sandbox
+                from app.core.resource_limits import get_limits_for_agent
+                
+                sandbox = get_sandbox()
+                limits = get_limits_for_agent(agent.agent_id)
+                
+                # Create or get execution context
+                exec_context = sandbox.get_context(agent.agent_id)
+                if not exec_context:
+                    exec_context = sandbox.create_context(
+                        agent_id=agent.agent_id,
+                        resource_limits=limits
+                    )
+                
                 # Pass previous results as context for subsequent agents
                 if results:
                     context['previous_results'] = [
@@ -176,8 +223,22 @@ class Orchestrator:
                         for r in results
                     ]
                 
-                result = await agent.execute(task, context)
-                results.append(result)
+                # Execute with sandbox limits
+                start_time = time.time()
+                with sandbox.execute_with_limits(agent.agent_id, "execute"):
+                    result = await agent.execute(task, context)
+                    
+                    # Save execution history
+                    try:
+                        from app.core.persistence import save_execution_history
+                        execution_time_ms = (time.time() - start_time) * 1000
+                        save_execution_history(result, execution_time_ms=execution_time_ms)
+                    except Exception as e:
+                        # Log but don't fail on persistence errors
+                        import logging
+                        logging.getLogger(__name__).warning(f"Failed to save execution history: {str(e)}")
+                    
+                    results.append(result)
             except Exception as e:
                 results.append(AgentResult(
                     agent_id=agent.agent_id,

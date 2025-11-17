@@ -68,6 +68,9 @@ async def orchestrate_task(
         context = validate_context(orchestrate_request.context)
         agent_ids = validate_agent_ids(orchestrate_request.agent_ids)
         
+        # Get request ID for cost tracking
+        request_id = getattr(request.state, "request_id", None)
+        
         # Route task to appropriate agent(s)
         if agent_ids:
             # Use specific agents if provided
@@ -76,6 +79,19 @@ async def orchestrate_task(
                 task=task,
                 context=context
             )
+            
+            # Track costs with endpoint context
+            from app.core.cost_tracker import get_cost_tracker
+            cost_tracker = get_cost_tracker()
+            for result in results:
+                # Update cost records with endpoint and request_id
+                recent_records = cost_tracker.get_recent_records(limit=len(results))
+                for record in recent_records:
+                    if not record.endpoint:
+                        record.endpoint = "/api/v1/orchestrate"
+                    if not record.request_id and request_id:
+                        record.request_id = request_id
+            
             return OrchestrateResponse(
                 success=all(r.success for r in results),
                 results=results,
@@ -87,6 +103,17 @@ async def orchestrate_task(
                 task=task,
                 context=context
             )
+            
+            # Track cost with endpoint context
+            from app.core.cost_tracker import get_cost_tracker
+            cost_tracker = get_cost_tracker()
+            recent_records = cost_tracker.get_recent_records(limit=1)
+            if recent_records:
+                record = recent_records[0]
+                record.endpoint = "/api/v1/orchestrate"
+                if request_id:
+                    record.request_id = request_id
+            
             return OrchestrateResponse(
                 success=result.success,
                 results=[result],
@@ -115,16 +142,49 @@ async def execute_workflow(
 
     Args:
         request: Workflow execution request
+        workflow_request: Workflow execution request with workflow_id and input_data
+        api_key: Verified API key
         executor: Workflow executor instance
 
     Returns:
         WorkflowExecuteResponse with workflow execution results
     """
-    # TODO: Implement workflow execution endpoint
-    # 1. Validate request
-    # 2. Load workflow definition
-    # 3. Call executor.execute
-    # 4. Handle errors appropriately
-    # 5. Return formatted response
-    raise NotImplementedError("execute_workflow endpoint must be implemented")
+    try:
+        # Load workflow definition
+        from app.core.workflow_loader import get_workflow_loader
+        
+        workflow_loader = get_workflow_loader()
+        workflow = workflow_loader.get_workflow(workflow_request.workflow_id)
+        
+        if not workflow:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Workflow '{workflow_request.workflow_id}' not found"
+            )
+        
+        if not workflow.enabled:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Workflow '{workflow_request.workflow_id}' is disabled"
+            )
+        
+        # Execute workflow
+        result = await executor.execute(
+            workflow=workflow,
+            input_data=workflow_request.input_data
+        )
+        
+        return WorkflowExecuteResponse(
+            success=result.success,
+            result=result,
+            message="Workflow executed successfully" if result.success else "Workflow execution failed"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to execute workflow: {str(e)}"
+        )
 

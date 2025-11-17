@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
 from app.llm.base import LLMProvider
 from app.models.agent import AgentResult, AgentCapability
+from app.core.tool_registry import get_tool_registry
 
 
 class BaseAgent(ABC):
@@ -33,6 +34,7 @@ class BaseAgent(ABC):
         self.llm_provider = llm_provider
         self.capabilities = capabilities or []
         self._state: Dict[str, Any] = {}
+        self._tool_registry = get_tool_registry()
 
     @abstractmethod
     async def execute(
@@ -104,6 +106,10 @@ class BaseAgent(ABC):
         Returns:
             Generated response text
         """
+        # Set agent context for cost tracking
+        if hasattr(self.llm_provider, '_current_agent_id'):
+            self.llm_provider._current_agent_id = self.agent_id
+        
         return await self.llm_provider.generate(
             prompt=prompt,
             system_prompt=system_prompt,
@@ -137,4 +143,57 @@ class BaseAgent(ABC):
             error=error,
             metadata=metadata or {}
         )
+    
+    async def use_tool(
+        self,
+        tool_id: str,
+        params: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute a tool.
+        
+        Args:
+            tool_id: Tool identifier
+            params: Tool parameters
+            context: Optional execution context
+            
+        Returns:
+            Tool execution result
+            
+        Raises:
+            AgentError: If tool execution fails
+        """
+        tool = self._tool_registry.get(tool_id)
+        if not tool:
+            from app.core.exceptions import AgentError
+            raise AgentError(
+                f"Tool '{tool_id}' not found",
+                agent_id=self.agent_id,
+                details={"available_tools": self._tool_registry.list_tools()}
+            )
+        
+        # Execute tool with sandboxing
+        from app.core.sandbox import get_sandbox
+        sandbox = get_sandbox()
+        
+        with sandbox.execute_with_limits(self.agent_id, f"tool_{tool_id}"):
+            return await tool.execute(self.agent_id, params, context)
+    
+    def get_available_tools(self) -> List[Dict[str, str]]:
+        """
+        Get list of available tools for this agent.
+        
+        Returns:
+            List of tool information dictionaries
+        """
+        tools = self._tool_registry.get_tools_for_agent(self.agent_id)
+        return [
+            {
+                "tool_id": tool.tool_id,
+                "name": tool.name,
+                "description": tool.description
+            }
+            for tool in tools
+        ]
 

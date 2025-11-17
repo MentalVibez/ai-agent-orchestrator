@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-agent-orchestrator
+  labels:
+    app: ai-agent-orchestrator
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ai-agent-orchestrator
+  template:
+    metadata:
+      labels:
+        app: ai-agent-orchestrator
+    spec:
+      containers:
+      - name: orchestrator
+        image: ai-agent-orchestrator:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: APP_NAME
+          value: "AI Agent Orchestrator"
+        - name: APP_VERSION
+          value: "1.0.0"
+        - name: DEBUG
+          value: "false"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: PORT
+          value: "8000"
+        envFrom:
+        - secretRef:
+            name: orchestrator-secrets
+        - configMapRef:
+            name: orchestrator-config
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: db-storage
+          mountPath: /app/data
+      volumes:
+      - name: db-storage
+        persistentVolumeClaim:
+          claimName: orchestrator-db-pvc
+

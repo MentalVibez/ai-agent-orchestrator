@@ -48,24 +48,16 @@ class NetworkDiagnosticsAgent(BaseAgent):
         try:
             context = context or {}
             
-            # Build system prompt for network diagnostics
-            system_prompt = """You are a network diagnostics expert. Analyze network connectivity issues, 
-            provide diagnostic guidance, and suggest troubleshooting steps. Be specific and actionable."""
-            
-            # Build user prompt with task and context
-            user_prompt = f"Network Diagnostics Task: {task}\n\n"
-            
-            if context:
-                user_prompt += "Context Information:\n"
-                for key, value in context.items():
-                    user_prompt += f"- {key}: {value}\n"
-                user_prompt += "\n"
-            
-            user_prompt += """Please provide:
-            1. Analysis of the network issue
-            2. Recommended diagnostic steps
-            3. Potential causes
-            4. Troubleshooting recommendations"""
+            # Use dynamic prompt generation
+            from app.core.prompt_generator import get_prompt_generator
+            prompt_gen = get_prompt_generator()
+            prompts = prompt_gen.generate_agent_prompt(
+                agent_id=self.agent_id,
+                task=task,
+                context=context
+            )
+            system_prompt = prompts["system_prompt"]
+            user_prompt = prompts["user_prompt"]
             
             # Generate response using LLM
             response = await self._generate_response(

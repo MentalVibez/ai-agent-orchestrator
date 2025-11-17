@@ -178,7 +178,6 @@ If you're integrating this into an existing chatbot (like donsylvester.dev), see
 - **[SETUP_SUMMARY.md](SETUP_SUMMARY.md)** - Complete setup requirements list
 - **[STATUS_UPDATE.md](STATUS_UPDATE.md)** - Current implementation status and assessment
 - **[ADDING_AGENTS.md](ADDING_AGENTS.md)** - Step-by-step guide to create and register new agents
-- **[AI_ENGINEERING_PATH.md](AI_ENGINEERING_PATH.md)** - Career development guide for transitioning to AI engineering
 
 ### Deployment
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Production deployment guide

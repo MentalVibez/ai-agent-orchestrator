@@ -1,11 +1,15 @@
 """AWS Bedrock LLM provider implementation."""
 
 import json
+import asyncio
 import boto3
 from typing import Dict, Any, Optional, AsyncIterator
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, BotoCoreError
 from app.llm.base import LLMProvider
 from app.core.config import settings
+from app.core.retry import retry_async, RetryConfig
+from app.core.exceptions import LLMProviderError
+import time
 
 
 class BedrockProvider(LLMProvider):
@@ -45,7 +49,7 @@ class BedrockProvider(LLMProvider):
         **kwargs: Any
     ) -> str:
         """
-        Generate a text response using AWS Bedrock.
+        Generate a text response using AWS Bedrock with retry logic.
 
         Args:
             prompt: User prompt
@@ -57,12 +61,85 @@ class BedrockProvider(LLMProvider):
         Returns:
             Generated text response
         """
-        # TODO: Implement Bedrock text generation
-        # 1. Prepare request body with prompt and parameters
-        # 2. Call bedrock_runtime.invoke_model
-        # 3. Parse response and extract text
-        # 4. Handle errors appropriately
-        raise NotImplementedError("generate method must be implemented")
+        # Retry configuration for Bedrock calls
+        retry_config = RetryConfig(
+            max_attempts=3,
+            initial_delay=1.0,
+            max_delay=10.0,
+            exponential_base=2.0,
+            retryable_exceptions=(ClientError, BotoCoreError, ConnectionError, TimeoutError)
+        )
+        
+        async def _generate_internal():
+            try:
+                # Prepare messages for Claude
+                messages = []
+                if system_prompt:
+                    messages.append({
+                        "role": "user",
+                        "content": system_prompt
+                    })
+                messages.append({
+                    "role": "user",
+                    "content": prompt
+                })
+                
+                # Prepare request body
+                request_body = {
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": max_tokens or settings.llm_max_tokens,
+                    "temperature": temperature if temperature is not None else settings.llm_temperature,
+                    "messages": messages
+                }
+                
+                # Call Bedrock (run in thread pool since boto3 is synchronous)
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: self.bedrock_runtime.invoke_model(
+                        modelId=self.model,
+                        contentType="application/json",
+                        accept="application/json",
+                        body=json.dumps(request_body)
+                    )
+                )
+                
+                # Parse response
+                response_body = json.loads(response['body'].read())
+                
+                # Extract text from Claude response
+                if 'content' in response_body and len(response_body['content']) > 0:
+                    return response_body['content'][0]['text']
+                else:
+                    raise ValueError("Unexpected response format from Bedrock")
+                    
+            except ClientError as e:
+                error_code = e.response.get('Error', {}).get('Code', '')
+                error_message = e.response.get('Error', {}).get('Message', str(e))
+                
+                # Don't retry on certain error codes
+                if error_code in ['ValidationException', 'AccessDeniedException', 'ResourceNotFoundException']:
+                    raise LLMProviderError(
+                        f"Bedrock API error ({error_code}): {error_message}",
+                        provider="bedrock",
+                        details={"error_code": error_code, "model": self.model}
+                    )
+                
+                # Retry on other errors
+                raise
+            except json.JSONDecodeError as e:
+                raise LLMProviderError(
+                    f"Failed to parse Bedrock response: {str(e)}",
+                    provider="bedrock"
+                )
+            except Exception as e:
+                raise LLMProviderError(
+                    f"Unexpected error in Bedrock generate: {str(e)}",
+                    provider="bedrock"
+                )
+        
+        # Execute with retry logic
+        return await retry_async(_generate_internal, config=retry_config)
 
     async def stream(
         self,
@@ -85,12 +162,57 @@ class BedrockProvider(LLMProvider):
         Yields:
             Text chunks as they are generated
         """
-        # TODO: Implement Bedrock streaming
-        # 1. Prepare request body with prompt and parameters
-        # 2. Call bedrock_runtime.invoke_model_with_response_stream
-        # 3. Parse streaming response chunks
-        # 4. Yield text chunks as they arrive
-        raise NotImplementedError("stream method must be implemented")
+        try:
+            # Prepare messages for Claude
+            messages = []
+            if system_prompt:
+                messages.append({
+                    "role": "user",
+                    "content": system_prompt
+                })
+            messages.append({
+                "role": "user",
+                "content": prompt
+            })
+            
+            # Prepare request body
+            request_body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": max_tokens or settings.llm_max_tokens,
+                "temperature": temperature if temperature is not None else settings.llm_temperature,
+                "messages": messages
+            }
+            
+            # Call Bedrock with streaming
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.bedrock_runtime.invoke_model_with_response_stream(
+                    modelId=self.model,
+                    contentType="application/json",
+                    accept="application/json",
+                    body=json.dumps(request_body)
+                )
+            )
+            
+            # Process streaming response
+            stream = response.get('body')
+            if stream:
+                for event in stream:
+                    if 'chunk' in event:
+                        chunk = json.loads(event['chunk']['bytes'])
+                        if 'delta' in chunk and 'text' in chunk['delta']:
+                            yield chunk['delta']['text']
+                        elif 'content_block_delta' in chunk:
+                            if 'delta' in chunk['content_block_delta'] and 'text' in chunk['content_block_delta']['delta']:
+                                yield chunk['content_block_delta']['delta']['text']
+                            
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            error_message = e.response.get('Error', {}).get('Message', str(e))
+            raise RuntimeError(f"Bedrock API error ({error_code}): {error_message}")
+        except Exception as e:
+            raise RuntimeError(f"Unexpected error in Bedrock stream: {str(e)}")
 
     async def generate_with_metadata(
         self,
@@ -113,9 +235,69 @@ class BedrockProvider(LLMProvider):
         Returns:
             Dictionary containing response and metadata
         """
-        # TODO: Implement Bedrock generation with metadata
-        # 1. Call generate method
-        # 2. Extract usage information from response
-        # 3. Return response with metadata (tokens, latency, etc.)
-        raise NotImplementedError("generate_with_metadata method must be implemented")
+        start_time = time.time()
+        
+        try:
+            # Prepare messages for Claude
+            messages = []
+            if system_prompt:
+                messages.append({
+                    "role": "user",
+                    "content": system_prompt
+                })
+            messages.append({
+                "role": "user",
+                "content": prompt
+            })
+            
+            # Prepare request body
+            request_body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": max_tokens or settings.llm_max_tokens,
+                "temperature": temperature if temperature is not None else settings.llm_temperature,
+                "messages": messages
+            }
+            
+            # Call Bedrock
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.bedrock_runtime.invoke_model(
+                    modelId=self.model,
+                    contentType="application/json",
+                    accept="application/json",
+                    body=json.dumps(request_body)
+                )
+            )
+            
+            # Parse response
+            response_body = json.loads(response['body'].read())
+            
+            # Extract text
+            text = ""
+            if 'content' in response_body and len(response_body['content']) > 0:
+                text = response_body['content'][0]['text']
+            
+            # Extract usage metadata
+            usage = response_body.get('usage', {})
+            latency = time.time() - start_time
+            
+            return {
+                'text': text,
+                'metadata': {
+                    'input_tokens': usage.get('input_tokens', 0),
+                    'output_tokens': usage.get('output_tokens', 0),
+                    'total_tokens': usage.get('input_tokens', 0) + usage.get('output_tokens', 0),
+                    'latency_seconds': latency,
+                    'model': self.model,
+                    'region': self.region
+                }
+            }
+            
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', '')
+            error_message = e.response.get('Error', {}).get('Message', str(e))
+            raise RuntimeError(f"Bedrock API error ({error_code}): {error_message}")
+        except Exception as e:
+            raise RuntimeError(f"Unexpected error in Bedrock generate_with_metadata: {str(e)}")
 

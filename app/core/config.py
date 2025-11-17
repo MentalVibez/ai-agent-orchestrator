@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # Server Settings
     host: str = Field(default="0.0.0.0", alias="HOST")
     port: int = Field(default=8000, alias="PORT")
+    
+    # Security Settings
+    api_key: str = Field(default="", alias="API_KEY")
+    rate_limit_per_minute: int = Field(default=60, alias="RATE_LIMIT_PER_MINUTE")
+    require_api_key: bool = Field(default=True, alias="REQUIRE_API_KEY")
 
     @property
     def cors_origins_list(self) -> List[str]:

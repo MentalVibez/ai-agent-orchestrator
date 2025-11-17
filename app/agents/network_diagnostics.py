@@ -45,11 +45,78 @@ class NetworkDiagnosticsAgent(BaseAgent):
         Returns:
             AgentResult with diagnostics results
         """
-        # TODO: Implement network diagnostics execution
-        # 1. Parse task and context to understand what diagnostics are needed
-        # 2. Use LLM to generate diagnostic commands or analysis
-        # 3. Execute network diagnostic operations (ping, traceroute, DNS lookup, etc.)
-        # 4. Analyze results using LLM
-        # 5. Return formatted AgentResult
-        raise NotImplementedError("execute method must be implemented")
+        try:
+            context = context or {}
+            
+            # Build system prompt for network diagnostics
+            system_prompt = """You are a network diagnostics expert. Analyze network connectivity issues, 
+            provide diagnostic guidance, and suggest troubleshooting steps. Be specific and actionable."""
+            
+            # Build user prompt with task and context
+            user_prompt = f"Network Diagnostics Task: {task}\n\n"
+            
+            if context:
+                user_prompt += "Context Information:\n"
+                for key, value in context.items():
+                    user_prompt += f"- {key}: {value}\n"
+                user_prompt += "\n"
+            
+            user_prompt += """Please provide:
+            1. Analysis of the network issue
+            2. Recommended diagnostic steps
+            3. Potential causes
+            4. Troubleshooting recommendations"""
+            
+            # Generate response using LLM
+            response = await self._generate_response(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                temperature=0.3  # Lower temperature for more focused technical responses
+            )
+            
+            # Format output
+            output = {
+                "summary": response[:200] + "..." if len(response) > 200 else response,
+                "full_analysis": response,
+                "diagnostic_type": self._identify_diagnostic_type(task),
+                "context_used": context
+            }
+            
+            return self._format_result(
+                success=True,
+                output=output,
+                metadata={
+                    "agent_id": self.agent_id,
+                    "task": task,
+                    "context_keys": list(context.keys()) if context else []
+                }
+            )
+            
+        except Exception as e:
+            return self._format_result(
+                success=False,
+                output={},
+                error=f"Network diagnostics failed: {str(e)}",
+                metadata={
+                    "agent_id": self.agent_id,
+                    "task": task
+                }
+            )
+    
+    def _identify_diagnostic_type(self, task: str) -> str:
+        """Identify the type of network diagnostic needed."""
+        task_lower = task.lower()
+        
+        if any(keyword in task_lower for keyword in ['ping', 'connectivity', 'reachable']):
+            return "connectivity_check"
+        elif any(keyword in task_lower for keyword in ['dns', 'resolve', 'domain']):
+            return "dns_resolution"
+        elif any(keyword in task_lower for keyword in ['latency', 'delay', 'slow']):
+            return "latency_analysis"
+        elif any(keyword in task_lower for keyword in ['route', 'traceroute', 'path']):
+            return "routing_analysis"
+        elif any(keyword in task_lower for keyword in ['port', 'scan', 'firewall']):
+            return "port_analysis"
+        else:
+            return "general_diagnostics"
 

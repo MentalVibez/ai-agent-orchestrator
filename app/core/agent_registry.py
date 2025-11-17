@@ -19,9 +19,10 @@ class AgentRegistry:
         Args:
             agent: Agent instance to register
         """
-        # TODO: Implement agent registration
-        # Store agent with its ID as the key
-        raise NotImplementedError("register method must be implemented")
+        if not agent or not agent.agent_id:
+            raise ValueError("Agent must have a valid agent_id")
+        
+        self._agents[agent.agent_id] = agent
 
     def get(self, agent_id: str) -> Optional[BaseAgent]:
         """
@@ -33,8 +34,7 @@ class AgentRegistry:
         Returns:
             Agent instance if found, None otherwise
         """
-        # TODO: Implement agent retrieval
-        raise NotImplementedError("get method must be implemented")
+        return self._agents.get(agent_id)
 
     def get_all(self) -> List[BaseAgent]:
         """
@@ -43,8 +43,7 @@ class AgentRegistry:
         Returns:
             List of all registered agent instances
         """
-        # TODO: Implement retrieval of all agents
-        raise NotImplementedError("get_all method must be implemented")
+        return list(self._agents.values())
 
     def get_by_capability(self, capability: str) -> List[BaseAgent]:
         """
@@ -56,8 +55,11 @@ class AgentRegistry:
         Returns:
             List of agents with the specified capability
         """
-        # TODO: Implement capability-based agent retrieval
-        raise NotImplementedError("get_by_capability method must be implemented")
+        matching_agents = []
+        for agent in self._agents.values():
+            if capability.lower() in [cap.lower() for cap in agent.capabilities]:
+                matching_agents.append(agent)
+        return matching_agents
 
     def list_agents(self) -> List[str]:
         """
@@ -66,6 +68,5 @@ class AgentRegistry:
         Returns:
             List of agent identifiers
         """
-        # TODO: Implement agent ID listing
-        raise NotImplementedError("list_agents method must be implemented")
+        return list(self._agents.keys())
 

@@ -1,12 +1,34 @@
 """Main FastAPI application entry point."""
 
-from fastapi import FastAPI
+import logging
+import time
+import uuid
+from fastapi import FastAPI, Request, Response, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from datetime import datetime
+from typing import Dict, Any
 from app.core.config import settings
 from app.api.v1.routes import orchestrator, agents
 from app.models.request import HealthResponse
+from app.core.rate_limit import limiter, RateLimitExceeded, _rate_limit_exceeded_handler
+from app.core.services import get_service_container
+from app.core.exceptions import (
+    OrchestratorError,
+    AgentError,
+    LLMProviderError,
+    ValidationError,
+    ConfigurationError,
+    ServiceUnavailableError
+)
 
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Initialize FastAPI application
 app = FastAPI(
@@ -16,6 +38,217 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Middleware to log all requests and responses."""
+    
+    async def dispatch(self, request: Request, call_next):
+        # Generate request ID for correlation
+        request_id = str(uuid.uuid4())[:8]
+        request.state.request_id = request_id
+        
+        # Log request
+        start_time = time.time()
+        logger.info(
+            f"Request [{request_id}]: {request.method} {request.url.path} - "
+            f"Client: {request.client.host if request.client else 'unknown'}"
+        )
+        
+        try:
+            response = await call_next(request)
+            
+            # Calculate duration
+            duration = time.time() - start_time
+            
+            # Log response
+            logger.info(
+                f"Response [{request_id}]: {request.method} {request.url.path} - "
+                f"Status: {response.status_code} - Duration: {duration:.3f}s"
+            )
+            
+            # Add request ID to response header
+            response.headers["X-Request-ID"] = request_id
+            
+            return response
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error(
+                f"Error [{request_id}]: {request.method} {request.url.path} - "
+                f"Duration: {duration:.3f}s - Error: {str(e)}",
+                exc_info=True
+            )
+            raise
+
+
+# Global exception handlers
+@app.exception_handler(OrchestratorError)
+async def orchestrator_exception_handler(request: Request, exc: OrchestratorError):
+    """Handle orchestrator exceptions."""
+    logger.error(
+        f"OrchestratorError [{getattr(request.state, 'request_id', 'unknown')}]: "
+        f"{exc.error_code} - {exc.message}",
+        exc_info=True,
+        extra={"error_code": exc.error_code, "details": exc.details}
+    )
+    
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "error": {
+                "code": exc.error_code,
+                "message": exc.message,
+                "details": exc.details,
+                "request_id": getattr(request.state, "request_id", None)
+            }
+        }
+    )
+
+
+@app.exception_handler(AgentError)
+async def agent_exception_handler(request: Request, exc: AgentError):
+    """Handle agent exceptions."""
+    logger.error(
+        f"AgentError [{getattr(request.state, 'request_id', 'unknown')}]: "
+        f"Agent {exc.agent_id} - {exc.message}",
+        exc_info=True,
+        extra={"agent_id": exc.agent_id, "details": exc.details}
+    )
+    
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "error": {
+                "code": exc.error_code,
+                "message": exc.message,
+                "agent_id": exc.agent_id,
+                "details": exc.details,
+                "request_id": getattr(request.state, "request_id", None)
+            }
+        }
+    )
+
+
+@app.exception_handler(LLMProviderError)
+async def llm_provider_exception_handler(request: Request, exc: LLMProviderError):
+    """Handle LLM provider exceptions."""
+    logger.error(
+        f"LLMProviderError [{getattr(request.state, 'request_id', 'unknown')}]: "
+        f"Provider {exc.provider} - {exc.message}",
+        exc_info=True,
+        extra={"provider": exc.provider, "details": exc.details}
+    )
+    
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "error": {
+                "code": exc.error_code,
+                "message": exc.message,
+                "provider": exc.provider,
+                "details": exc.details,
+                "request_id": getattr(request.state, "request_id", None)
+            }
+        }
+    )
+
+
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request: Request, exc: ValidationError):
+    """Handle validation exceptions."""
+    logger.warning(
+        f"ValidationError [{getattr(request.state, 'request_id', 'unknown')}]: "
+        f"Field {exc.field} - {exc.message}",
+        extra={"field": exc.field, "details": exc.details}
+    )
+    
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={
+            "error": {
+                "code": exc.error_code,
+                "message": exc.message,
+                "field": exc.field,
+                "details": exc.details,
+                "request_id": getattr(request.state, "request_id", None)
+            }
+        }
+    )
+
+
+@app.exception_handler(ServiceUnavailableError)
+async def service_unavailable_exception_handler(request: Request, exc: ServiceUnavailableError):
+    """Handle service unavailable exceptions."""
+    logger.error(
+        f"ServiceUnavailableError [{getattr(request.state, 'request_id', 'unknown')}]: "
+        f"Service {exc.service} - {exc.message}",
+        extra={"service": exc.service, "details": exc.details}
+    )
+    
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "error": {
+                "code": exc.error_code,
+                "message": exc.message,
+                "service": exc.service,
+                "details": exc.details,
+                "request_id": getattr(request.state, "request_id", None)
+            }
+        }
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle all other exceptions."""
+    request_id = getattr(request.state, "request_id", "unknown")
+    logger.error(
+        f"UnhandledException [{request_id}]: {type(exc).__name__} - {str(exc)}",
+        exc_info=True
+    )
+    
+    # Don't expose internal errors in production
+    if settings.debug:
+        error_message = str(exc)
+    else:
+        error_message = "An internal error occurred. Please try again later."
+    
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": error_message,
+                "request_id": request_id
+            }
+        }
+    )
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Middleware to add security headers to responses."""
+    
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        
+        # Add security headers
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        
+        return response
+
+
+# Add middleware (order matters - logging first, then security)
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Configure CORS
 app.add_middleware(
@@ -47,18 +280,59 @@ async def root():
 
 
 @app.get("/api/v1/health", response_model=HealthResponse, tags=["health"])
-async def health_check() -> HealthResponse:
+@limiter.limit(f"{settings.rate_limit_per_minute}/minute")
+async def health_check(request: Request) -> HealthResponse:
     """
-    Health check endpoint.
+    Health check endpoint with dependency validation.
 
     Returns:
         HealthResponse with status information
     """
-    return HealthResponse(
-        status="healthy",
-        version=settings.app_version,
-        timestamp=datetime.utcnow().isoformat()
-    )
+    try:
+        # Check if services are initialized
+        container = get_service_container()
+        agent_registry = container.get_agent_registry()
+        agents = agent_registry.get_all()
+        agents_count = len(agents)
+        
+        # Check agent registry
+        if agents_count == 0:
+            logger.warning("Health check: No agents registered")
+            return HealthResponse(
+                status="degraded",
+                version=settings.app_version,
+                timestamp=datetime.utcnow().isoformat()
+            )
+        
+        # Check LLM provider (basic check - try to get provider)
+        try:
+            llm_manager = container._llm_manager
+            if llm_manager:
+                # Provider is initialized
+                pass
+        except Exception as e:
+            logger.warning(f"Health check: LLM provider check failed: {str(e)}")
+            return HealthResponse(
+                status="degraded",
+                version=settings.app_version,
+                timestamp=datetime.utcnow().isoformat()
+            )
+        
+        # All checks passed
+        status = "healthy"
+        
+        return HealthResponse(
+            status=status,
+            version=settings.app_version,
+            timestamp=datetime.utcnow().isoformat()
+        )
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}", exc_info=True)
+        return HealthResponse(
+            status="unhealthy",
+            version=settings.app_version,
+            timestamp=datetime.utcnow().isoformat()
+        )
 
 
 @app.on_event("startup")
@@ -68,13 +342,25 @@ async def startup_event():
 
     Initialize services, load agents, etc.
     """
-    # TODO: Implement startup logic
-    # 1. Initialize LLM manager and provider
-    # 2. Initialize agent registry
-    # 3. Register all agents
-    # 4. Initialize orchestrator and workflow executor
-    # 5. Load workflow definitions
-    pass
+    try:
+        logger.info("Starting AI Agent Orchestrator...")
+        logger.info(f"Version: {settings.app_version}")
+        logger.info(f"LLM Provider: {settings.llm_provider}")
+        logger.info(f"Debug Mode: {settings.debug}")
+        
+        # Initialize service container (this will initialize all services)
+        container = get_service_container()
+        container.initialize()
+        
+        # Log initialized services
+        agent_registry = container.get_agent_registry()
+        agents = agent_registry.get_all()
+        logger.info(f"Initialized {len(agents)} agent(s): {[a.agent_id for a in agents]}")
+        
+        logger.info("Startup complete - API ready to accept requests")
+    except Exception as e:
+        logger.error(f"Startup failed: {str(e)}", exc_info=True)
+        raise
 
 
 @app.on_event("shutdown")
@@ -84,11 +370,16 @@ async def shutdown_event():
 
     Clean up resources, close connections, etc.
     """
-    # TODO: Implement shutdown logic
-    # 1. Clean up LLM connections
-    # 2. Save agent states if needed
-    # 3. Close any open connections
-    pass
+    try:
+        logger.info("Shutting down AI Agent Orchestrator...")
+        
+        # Shutdown service container
+        container = get_service_container()
+        container.shutdown()
+        
+        logger.info("Shutdown complete")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {str(e)}", exc_info=True)
 
 
 if __name__ == "__main__":

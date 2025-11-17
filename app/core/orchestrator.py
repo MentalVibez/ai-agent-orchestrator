@@ -32,12 +32,73 @@ class Orchestrator:
         Returns:
             AgentResult containing the execution results
         """
-        # TODO: Implement task routing logic
-        # 1. Analyze task to determine which agent(s) should handle it
-        # 2. Select appropriate agent(s) from registry
-        # 3. Execute agent(s) with task and context
-        # 4. Aggregate and return results
-        raise NotImplementedError("route_task method must be implemented")
+        if not task or not task.strip():
+            return AgentResult(
+                agent_id="orchestrator",
+                agent_name="Orchestrator",
+                success=False,
+                output={},
+                error="Task description is required"
+            )
+        
+        context = context or {}
+        task_lower = task.lower()
+        
+        # Simple keyword-based routing (can be enhanced with LLM-based routing)
+        selected_agent = None
+        
+        # Network diagnostics keywords
+        network_keywords = ['network', 'connectivity', 'ping', 'dns', 'latency', 'route', 'traceroute', 'port']
+        if any(keyword in task_lower for keyword in network_keywords):
+            selected_agent = self.agent_registry.get("network_diagnostics")
+        
+        # System monitoring keywords
+        system_keywords = ['system', 'monitor', 'cpu', 'memory', 'disk', 'performance', 'load']
+        if not selected_agent and any(keyword in task_lower for keyword in system_keywords):
+            selected_agent = self.agent_registry.get("system_monitoring")
+        
+        # Log analysis keywords
+        log_keywords = ['log', 'error', 'exception', 'debug', 'trace', 'troubleshoot']
+        if not selected_agent and any(keyword in task_lower for keyword in log_keywords):
+            selected_agent = self.agent_registry.get("log_analysis")
+        
+        # Infrastructure keywords
+        infra_keywords = ['infrastructure', 'deploy', 'server', 'configure', 'setup', 'provision']
+        if not selected_agent and any(keyword in task_lower for keyword in infra_keywords):
+            selected_agent = self.agent_registry.get("infrastructure")
+        
+        # If no specific agent found, try to find by capability
+        if not selected_agent:
+            # Try to find any agent that might handle this
+            all_agents = self.agent_registry.get_all()
+            if all_agents:
+                # Default to first available agent (can be enhanced)
+                selected_agent = all_agents[0]
+        
+        # Execute the selected agent
+        if selected_agent:
+            try:
+                result = await selected_agent.execute(task, context)
+                return result
+            except Exception as e:
+                return AgentResult(
+                    agent_id="orchestrator",
+                    agent_name="Orchestrator",
+                    success=False,
+                    output={},
+                    error=f"Agent execution failed: {str(e)}",
+                    metadata={"selected_agent": selected_agent.agent_id}
+                )
+        else:
+            # No agent available
+            return AgentResult(
+                agent_id="orchestrator",
+                agent_name="Orchestrator",
+                success=False,
+                output={},
+                error="No suitable agent found to handle this task",
+                metadata={"task": task, "available_agents": self.agent_registry.list_agents()}
+            )
 
     async def execute_workflow(
         self,
@@ -79,10 +140,52 @@ class Orchestrator:
         Returns:
             List of AgentResult objects from each agent
         """
-        # TODO: Implement multi-agent coordination
-        # 1. Retrieve agents from registry
-        # 2. Execute agents (sequentially or in parallel)
-        # 3. Handle agent communication and data sharing
-        # 4. Return results from all agents
-        raise NotImplementedError("coordinate_agents method must be implemented")
+        if not agent_ids:
+            return []
+        
+        context = context or {}
+        results = []
+        
+        # Retrieve agents from registry
+        agents = []
+        for agent_id in agent_ids:
+            agent = self.agent_registry.get(agent_id)
+            if agent:
+                agents.append(agent)
+            else:
+                # Create error result for missing agent
+                results.append(AgentResult(
+                    agent_id=agent_id,
+                    agent_name=f"Unknown Agent ({agent_id})",
+                    success=False,
+                    output={},
+                    error=f"Agent '{agent_id}' not found in registry"
+                ))
+        
+        # Execute agents sequentially (can be enhanced to run in parallel)
+        for agent in agents:
+            try:
+                # Pass previous results as context for subsequent agents
+                if results:
+                    context['previous_results'] = [
+                        {
+                            'agent_id': r.agent_id,
+                            'success': r.success,
+                            'summary': str(r.output)[:200] if r.output else None
+                        }
+                        for r in results
+                    ]
+                
+                result = await agent.execute(task, context)
+                results.append(result)
+            except Exception as e:
+                results.append(AgentResult(
+                    agent_id=agent.agent_id,
+                    agent_name=agent.name,
+                    success=False,
+                    output={},
+                    error=f"Agent execution failed: {str(e)}"
+                ))
+        
+        return results
 

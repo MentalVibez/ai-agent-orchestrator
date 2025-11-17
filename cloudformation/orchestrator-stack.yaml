@@ -1,0 +1,382 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AI Agent Orchestrator API - Adds specialized agent orchestration to the portfolio chatbot infrastructure
+
+Parameters:
+  ExistingStackName:
+    Type: String
+    Description: Name of the existing portfolio chatbot stack
+    Default: portfolio-chatbot-backend
+  
+  ApiKeyValue:
+    Type: String
+    Description: API key for orchestrator authentication (or use Secrets Manager)
+    NoEcho: true
+    Default: ""
+  
+  CORSOrigins:
+    Type: String
+    Description: Comma-separated list of allowed CORS origins
+    Default: "https://donsylvester.dev,https://www.donsylvester.dev"
+  
+  CodeS3Bucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment package
+    Default: ""
+  
+  CodeS3Key:
+    Type: String
+    Description: S3 key for Lambda deployment package
+    Default: "orchestrator-lambda.zip"
+
+Resources:
+  # IAM Role for Orchestrator Lambda
+  OrchestratorLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-OrchestratorLambdaRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: !Sub "${AWS::StackName}-OrchestratorLambdaPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0"
+                  - !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:orchestrator/*"
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt OrchestratorStateTable.Arn
+                  - !Sub "${OrchestratorStateTable.Arn}/*"
+
+  # DynamoDB Table for Orchestrator State (Optional)
+  OrchestratorStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-OrchestratorState"
+      AttributeDefinitions:
+        - AttributeName: "id"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "id"
+          KeyType: "HASH"
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: "ttl"
+
+  # Secrets Manager Secret for API Key
+  OrchestratorApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AWS::StackName}/api-key"
+      Description: "API key for orchestrator authentication"
+      SecretString: !If
+        - HasApiKey
+        - !Ref ApiKeyValue
+        - !Sub |
+            {
+              "api_key": "CHANGE_ME_IN_SECRETS_MANAGER"
+            }
+      GenerateSecretString:
+        SecretStringTemplate: '{"api_key":""}'
+        GenerateStringKey: "api_key"
+        ExcludeCharacters: '"@/\\'
+        PasswordLength: 32
+
+  # Orchestrator Lambda Function
+  OrchestratorLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-OrchestratorHandler"
+      Handler: app.main.handler
+      Role: !GetAtt OrchestratorLambdaRole.Arn
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          API_KEY_SECRET_NAME: !Ref OrchestratorApiKeySecret
+          CORS_ORIGINS: !Ref CORSOrigins
+          LLM_PROVIDER: bedrock
+          LLM_MODEL: anthropic.claude-3-haiku-20240307-v1:0
+          AWS_REGION: !Ref AWS::Region
+          STATE_TABLE_NAME: !Ref OrchestratorStateTable
+      Code:
+        ZipFile: |
+          # Placeholder - replace with actual deployment package
+          # Use S3 bucket for actual deployment:
+          # Code:
+          #   S3Bucket: !Ref CodeS3Bucket
+          #   S3Key: !Ref CodeS3Key
+          def handler(event, context):
+              return {
+                  'statusCode': 200,
+                  'body': '{"message": "Orchestrator Lambda - Update with actual code"}'
+              }
+
+  # API Gateway for Orchestrator
+  OrchestratorApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub "${AWS::StackName}-OrchestratorApi"
+      Description: "API for AI Agent Orchestrator"
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  # API Gateway Resources
+  OrchestratorApiV1Resource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref OrchestratorApi
+      ParentId: !GetAtt OrchestratorApi.RootResourceId
+      PathPart: "api"
+
+  OrchestratorApiV1Resource2:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref OrchestratorApi
+      ParentId: !Ref OrchestratorApiV1Resource
+      PathPart: "v1"
+
+  OrchestratorApiOrchestrateResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref OrchestratorApi
+      ParentId: !Ref OrchestratorApiV1Resource2
+      PathPart: "orchestrate"
+
+  OrchestratorApiAgentsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref OrchestratorApi
+      ParentId: !Ref OrchestratorApiV1Resource2
+      PathPart: "agents"
+
+  OrchestratorApiHealthResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref OrchestratorApi
+      ParentId: !Ref OrchestratorApiV1Resource2
+      PathPart: "health"
+
+  # API Gateway Methods
+  OrchestratorApiOrchestrateMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref OrchestratorApi
+      ResourceId: !Ref OrchestratorApiOrchestrateResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OrchestratorLambda.Arn}/invocations"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+
+  OrchestratorApiAgentsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref OrchestratorApi
+      ResourceId: !Ref OrchestratorApiAgentsResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OrchestratorLambda.Arn}/invocations"
+
+  OrchestratorApiHealthMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref OrchestratorApi
+      ResourceId: !Ref OrchestratorApiHealthResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OrchestratorLambda.Arn}/invocations"
+
+  # OPTIONS method for CORS
+  OrchestratorApiOrchestrateOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref OrchestratorApi
+      ResourceId: !Ref OrchestratorApiOrchestrateResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'${CORSOrigins}'"
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+            method.response.header.Access-Control-Allow-Origin: true
+
+  # API Key
+  OrchestratorApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub "${AWS::StackName}-OrchestratorApiKey"
+      Enabled: true
+      Description: "API key for orchestrator authentication"
+
+  # Usage Plan
+  OrchestratorUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: !Sub "${AWS::StackName}-OrchestratorUsagePlan"
+      ApiStages:
+        - ApiId: !Ref OrchestratorApi
+          Stage: production
+      Throttle:
+        RateLimit: 60
+        BurstLimit: 100
+      Quota:
+        Limit: 10000
+        Period: DAY
+
+  # Link API Key to Usage Plan
+  OrchestratorUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref OrchestratorApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref OrchestratorUsagePlan
+
+  # API Gateway Deployment
+  OrchestratorApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - OrchestratorApiOrchestrateMethod
+      - OrchestratorApiAgentsMethod
+      - OrchestratorApiHealthMethod
+    Properties:
+      RestApiId: !Ref OrchestratorApi
+      StageName: production
+
+  # Lambda Permission for API Gateway
+  OrchestratorLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt OrchestratorLambda.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${OrchestratorApi}/*/*"
+
+  # CloudWatch Log Group
+  OrchestratorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${OrchestratorLambda}"
+      RetentionInDays: 14
+
+  # CloudWatch Alarms
+  OrchestratorErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-OrchestratorErrors"
+      AlarmDescription: "Alert when orchestrator Lambda has errors"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref OrchestratorLambda
+      TreatMissingData: notBreaching
+
+  OrchestratorThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-OrchestratorThrottles"
+      AlarmDescription: "Alert when orchestrator API is throttled"
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref OrchestratorApi
+      TreatMissingData: notBreaching
+
+Conditions:
+  HasApiKey: !Not [!Equals [!Ref ApiKeyValue, ""]]
+  HasCodeBucket: !Not [!Equals [!Ref CodeS3Bucket, ""]]
+
+Outputs:
+  OrchestratorApiEndpoint:
+    Description: "The endpoint URL for the orchestrator API"
+    Value: !Sub "https://${OrchestratorApi}.execute-api.${AWS::Region}.amazonaws.com/production"
+    Export:
+      Name: !Sub "${AWS::StackName}-OrchestratorApiEndpoint"
+
+  OrchestratorApiKeyId:
+    Description: "API Key ID for orchestrator authentication"
+    Value: !Ref OrchestratorApiKey
+    Export:
+      Name: !Sub "${AWS::StackName}-OrchestratorApiKeyId"
+
+  OrchestratorLambdaArn:
+    Description: "ARN of the orchestrator Lambda function"
+    Value: !GetAtt OrchestratorLambda.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-OrchestratorLambdaArn"
+
+  OrchestratorStateTableName:
+    Description: "Name of the orchestrator state DynamoDB table"
+    Value: !Ref OrchestratorStateTable
+    Export:
+      Name: !Sub "${AWS::StackName}-OrchestratorStateTable"
+
+  OrchestratorApiKeySecretArn:
+    Description: "ARN of the API key secret in Secrets Manager"
+    Value: !Ref OrchestratorApiKeySecret
+    Export:
+      Name: !Sub "${AWS::StackName}-OrchestratorApiKeySecret"
+

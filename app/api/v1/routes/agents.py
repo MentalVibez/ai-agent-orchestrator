@@ -1,10 +1,14 @@
 """API routes for agent management."""
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from typing import List
 from app.models.request import AgentsListResponse, AgentDetailResponse
 from app.models.agent import AgentInfo
 from app.core.agent_registry import AgentRegistry
+from app.core.auth import verify_api_key
+from app.core.rate_limit import limiter
+from app.core.config import settings
+from app.core.services import get_service_container
 
 
 router = APIRouter(prefix="/api/v1", tags=["agents"])
@@ -17,41 +21,65 @@ def get_agent_registry() -> AgentRegistry:
     Returns:
         AgentRegistry instance
     """
-    # TODO: Implement dependency injection for agent registry
-    # This should retrieve the registry from application state
-    raise NotImplementedError("get_agent_registry dependency must be implemented")
+    container = get_service_container()
+    return container.get_agent_registry()
 
 
 @router.get("/agents", response_model=AgentsListResponse)
+@limiter.limit(f"{settings.rate_limit_per_minute}/minute")
 async def list_agents(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
     registry: AgentRegistry = Depends(get_agent_registry)
 ) -> AgentsListResponse:
     """
     List all available agents.
 
     Args:
+        request: FastAPI request object
+        api_key: Verified API key
         registry: Agent registry instance
 
     Returns:
         AgentsListResponse with list of agents
     """
-    # TODO: Implement agents listing endpoint
-    # 1. Get all agents from registry
-    # 2. Convert to AgentInfo models
-    # 3. Return formatted response
-    raise NotImplementedError("list_agents endpoint must be implemented")
+    try:
+        agents = registry.get_all()
+        agent_infos = [
+            AgentInfo(
+                agent_id=agent.agent_id,
+                name=agent.name,
+                description=agent.description,
+                capabilities=agent.get_capabilities()
+            )
+            for agent in agents
+        ]
+        return AgentsListResponse(
+            agents=agent_infos,
+            count=len(agent_infos)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to list agents: {str(e)}"
+        )
 
 
 @router.get("/agents/{agent_id}", response_model=AgentDetailResponse)
+@limiter.limit(f"{settings.rate_limit_per_minute}/minute")
 async def get_agent(
+    request: Request,
     agent_id: str,
+    api_key: str = Depends(verify_api_key),
     registry: AgentRegistry = Depends(get_agent_registry)
 ) -> AgentDetailResponse:
     """
     Get details for a specific agent.
 
     Args:
+        request: FastAPI request object
         agent_id: Agent identifier
+        api_key: Verified API key
         registry: Agent registry instance
 
     Returns:
@@ -60,10 +88,26 @@ async def get_agent(
     Raises:
         HTTPException: If agent is not found
     """
-    # TODO: Implement agent detail endpoint
-    # 1. Get agent from registry by ID
-    # 2. If not found, raise HTTPException with 404
-    # 3. Convert to AgentInfo model
-    # 4. Return formatted response
-    raise NotImplementedError("get_agent endpoint must be implemented")
+    try:
+        agent = registry.get(agent_id)
+        if not agent:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Agent '{agent_id}' not found"
+            )
+        
+        agent_info = AgentInfo(
+            agent_id=agent.agent_id,
+            name=agent.name,
+            description=agent.description,
+            capabilities=agent.get_capabilities()
+        )
+        return AgentDetailResponse(agent=agent_info)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get agent: {str(e)}"
+        )
 

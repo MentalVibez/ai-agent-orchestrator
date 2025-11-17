@@ -2,9 +2,18 @@
 
 A multi-agent backend system that coordinates specialized LLM-powered agents to handle complex IT diagnostics and IT engineering workflows through a single HTTP API.
 
+> **Template Repository**: This is a public template that can be used as a foundation for building AI agent orchestration systems. It includes security features, deployment configurations, and integration examples.
+
 ## Overview
 
 The AI Agent Orchestrator is a FastAPI-based system that enables coordination of multiple specialized AI agents for IT operations. Each agent is designed to handle specific types of tasks (network diagnostics, system monitoring, log analysis, infrastructure management) and can work independently or collaboratively through the orchestrator.
+
+### Use Cases
+
+- **Chatbot Enhancement**: Integrate specialized agents into existing chatbots for IT diagnostics and troubleshooting
+- **IT Operations**: Automate network diagnostics, system monitoring, and log analysis
+- **Multi-Agent Workflows**: Coordinate multiple agents to handle complex, multi-step tasks
+- **API Service**: Provide agent orchestration as a service to other applications
 
 ## Architecture
 
@@ -152,6 +161,59 @@ Content-Type: application/json
 ```
 
 Executes a predefined multi-step workflow.
+
+## 🚀 Quick Start for Chatbot Integration
+
+If you're integrating this into an existing chatbot (like donsylvester.dev), see:
+
+- **[CHATBOT_SETUP.md](CHATBOT_SETUP.md)** - Quick setup checklist
+- **[INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md)** - Detailed integration guide with code examples
+- **[examples/](examples/)** - Ready-to-use code examples for backend proxy and frontend integration
+
+## 📚 Documentation
+
+### Getting Started
+- **[CHATBOT_SETUP.md](CHATBOT_SETUP.md)** - Quick setup checklist for chatbot integration
+- **[INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md)** - Detailed integration guide with code examples
+- **[SETUP_SUMMARY.md](SETUP_SUMMARY.md)** - Complete setup requirements list
+- **[ADDING_AGENTS.md](ADDING_AGENTS.md)** - Step-by-step guide to create and register new agents
+
+### Deployment
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Production deployment guide
+- **[DEPLOYMENT_INTEGRATION.md](DEPLOYMENT_INTEGRATION.md)** - Integration with existing AWS infrastructure
+- **[EXISTING_INFRASTRUCTURE_ANALYSIS.md](EXISTING_INFRASTRUCTURE_ANALYSIS.md)** - Analysis of current AWS setup
+
+### Production Readiness
+- **[PRODUCTION_ROADMAP.md](PRODUCTION_ROADMAP.md)** - ⭐ **Start Here** - Quick reference roadmap
+- **[ENTERPRISE_READINESS.md](ENTERPRISE_READINESS.md)** - Requirements for small business to enterprise
+- **[SCALABILITY_ARCHITECTURE.md](SCALABILITY_ARCHITECTURE.md)** - Scalability patterns and architecture
+- **[PRODUCTION_READINESS.md](PRODUCTION_READINESS.md)** - Detailed production readiness review
+- **[PRODUCTION_GAPS.md](PRODUCTION_GAPS.md)** - Quick summary of missing features
+
+### Security & Infrastructure
+- **[SECURITY.md](SECURITY.md)** - Security features and best practices
+- **[AWS_INFRASTRUCTURE_REVIEW.md](AWS_INFRASTRUCTURE_REVIEW.md)** - AWS infrastructure recommendations
+- **[AWS_INFRASTRUCTURE_ANALYSIS.md](AWS_INFRASTRUCTURE_ANALYSIS.md)** - Analysis of your AWS setup
+
+### Architecture
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design
+
+## ⚠️ Current Status
+
+**This is a template/scaffolding repository.** Core business logic needs to be implemented before production use. See [PRODUCTION_GAPS.md](PRODUCTION_GAPS.md) for details.
+
+**What's Ready:**
+- ✅ Security features (API keys, rate limiting, CORS)
+- ✅ Configuration management
+- ✅ Docker deployment
+- ✅ Code structure and architecture
+
+**What Needs Implementation:**
+- ⚠️ Core business logic (orchestrator, agents, LLM providers)
+- ⚠️ Logging and error handling
+- ⚠️ Database/persistence layer
+- ⚠️ Monitoring and observability
+- ⚠️ Testing infrastructure
 
 ## Usage Examples
 

@@ -389,7 +389,17 @@ pytest
 
 ## License
 
-[Specify your license here]
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+### What This Means
+
+- ✅ **Free to use** - Commercial and personal use allowed
+- ✅ **Modify freely** - Adapt to your needs
+- ✅ **Distribute** - Share your modifications
+- ✅ **Private use** - Use in proprietary projects
+- ⚠️ **Attribution required** - Include the original license and copyright notice
+
+The MIT License is one of the most permissive open-source licenses, making this template ideal for both learning and commercial use.
 
 ## Support
 

@@ -1,0 +1,49 @@
+agents:
+  network_diagnostics:
+    id: network_diagnostics
+    name: Network Diagnostics Agent
+    description: Handles network connectivity, latency, routing, and DNS issues
+    capabilities:
+      - network_connectivity
+      - latency_analysis
+      - routing_diagnostics
+      - dns_resolution
+      - port_scanning
+    enabled: true
+
+  system_monitoring:
+    id: system_monitoring
+    name: System Monitoring Agent
+    description: Monitors system resources including CPU, memory, disk usage, and processes
+    capabilities:
+      - cpu_monitoring
+      - memory_monitoring
+      - disk_usage
+      - process_management
+      - system_health
+    enabled: true
+
+  log_analysis:
+    id: log_analysis
+    name: Log Analysis Agent
+    description: Analyzes logs, detects errors, and provides troubleshooting insights
+    capabilities:
+      - log_parsing
+      - error_detection
+      - pattern_matching
+      - log_aggregation
+      - troubleshooting
+    enabled: true
+
+  infrastructure:
+    id: infrastructure
+    name: Infrastructure Agent
+    description: Handles infrastructure provisioning, configuration management, and deployment
+    capabilities:
+      - provisioning
+      - configuration_management
+      - deployment
+      - infrastructure_as_code
+      - resource_management
+    enabled: true
+

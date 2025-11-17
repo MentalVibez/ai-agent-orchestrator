@@ -1,6 +1,7 @@
 """Unit tests for Network Diagnostics Agent."""
 
 import pytest
+from unittest.mock import AsyncMock
 from app.agents.network_diagnostics import NetworkDiagnosticsAgent
 from tests.fixtures.mock_llm import MockLLMProvider
 

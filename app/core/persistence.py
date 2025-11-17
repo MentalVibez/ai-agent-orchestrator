@@ -37,7 +37,7 @@ def save_execution_history(
             success=result.success,
             output=result.output if isinstance(result.output, dict) else {"output": str(result.output)},
             error=result.error,
-            metadata=result.metadata,
+            execution_metadata=result.metadata if result.metadata else None,
             execution_time_ms=execution_time_ms
         )
         db.add(history)

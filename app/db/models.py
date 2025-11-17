@@ -22,7 +22,7 @@ class ExecutionHistory(Base):
     success = Column(Boolean, default=False)
     output = Column(JSON, nullable=True)
     error = Column(Text, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    execution_metadata = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     execution_time_ms = Column(Float, nullable=True)
     
@@ -38,7 +38,7 @@ class ExecutionHistory(Base):
             "success": self.success,
             "output": self.output,
             "error": self.error,
-            "metadata": self.metadata,
+            "metadata": self.execution_metadata,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "execution_time_ms": self.execution_time_ms
         }

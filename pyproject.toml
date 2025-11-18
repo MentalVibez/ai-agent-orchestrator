@@ -59,10 +59,5 @@ Issues = "https://github.com/MentalVibez/ai-agent-orchestrator/issues"
 where = ["."]
 include = ["app*"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-asyncio_mode = "auto"
+# Removed [tool.pytest.ini_options] section - using pytest.ini instead
 

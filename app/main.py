@@ -3,6 +3,7 @@
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -30,13 +31,59 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifespan context manager for startup and shutdown events.
+    
+    Args:
+        app: FastAPI application instance
+    """
+    # Startup
+    try:
+        logger.info("Starting AI Agent Orchestrator...")
+        logger.info(f"Version: {settings.app_version}")
+        logger.info(f"LLM Provider: {settings.llm_provider}")
+        logger.info(f"Debug Mode: {settings.debug}")
+        
+        # Initialize service container (this will initialize all services)
+        container = get_service_container()
+        container.initialize()
+        
+        # Log initialized services
+        agent_registry = container.get_agent_registry()
+        agents = agent_registry.get_all()
+        logger.info(f"Initialized {len(agents)} agent(s): {[a.agent_id for a in agents]}")
+        
+        logger.info("Startup complete - API ready to accept requests")
+    except Exception as e:
+        logger.error(f"Startup failed: {str(e)}", exc_info=True)
+        raise
+    
+    yield
+    
+    # Shutdown
+    try:
+        logger.info("Shutting down AI Agent Orchestrator...")
+        
+        # Shutdown service container
+        container = get_service_container()
+        container.shutdown()
+        
+        logger.info("Shutdown complete")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {str(e)}", exc_info=True)
+
+
 # Initialize FastAPI application
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="Multi-agent AI orchestrator for IT diagnostics and engineering workflows",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # Add rate limiter to app state
@@ -348,51 +395,7 @@ async def health_check(request: Request) -> HealthResponse:
         )
 
 
-@app.on_event("startup")
-async def startup_event():
-    """
-    Startup event handler.
-
-    Initialize services, load agents, etc.
-    """
-    try:
-        logger.info("Starting AI Agent Orchestrator...")
-        logger.info(f"Version: {settings.app_version}")
-        logger.info(f"LLM Provider: {settings.llm_provider}")
-        logger.info(f"Debug Mode: {settings.debug}")
-        
-        # Initialize service container (this will initialize all services)
-        container = get_service_container()
-        container.initialize()
-        
-        # Log initialized services
-        agent_registry = container.get_agent_registry()
-        agents = agent_registry.get_all()
-        logger.info(f"Initialized {len(agents)} agent(s): {[a.agent_id for a in agents]}")
-        
-        logger.info("Startup complete - API ready to accept requests")
-    except Exception as e:
-        logger.error(f"Startup failed: {str(e)}", exc_info=True)
-        raise
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """
-    Shutdown event handler.
-
-    Clean up resources, close connections, etc.
-    """
-    try:
-        logger.info("Shutting down AI Agent Orchestrator...")
-        
-        # Shutdown service container
-        container = get_service_container()
-        container.shutdown()
-        
-        logger.info("Shutdown complete")
-    except Exception as e:
-        logger.error(f"Error during shutdown: {str(e)}", exc_info=True)
+# Startup and shutdown are now handled by lifespan context manager above
 
 
 if __name__ == "__main__":

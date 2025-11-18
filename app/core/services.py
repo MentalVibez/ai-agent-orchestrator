@@ -7,6 +7,8 @@ from app.core.workflow_executor import WorkflowExecutor
 from app.llm.manager import LLMManager
 from app.llm.bedrock import BedrockProvider
 from app.agents.network_diagnostics import NetworkDiagnosticsAgent
+from app.agents.system_monitoring import SystemMonitoringAgent
+from app.agents.code_review import CodeReviewAgent
 
 
 class ServiceContainer:

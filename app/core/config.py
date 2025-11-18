@@ -2,7 +2,7 @@
 
 from typing import List
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, ConfigDict
 
 
 class Settings(BaseSettings):
@@ -59,11 +59,11 @@ class Settings(BaseSettings):
         """Parse CORS origins string into a list."""
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
-    class Config:
-        """Pydantic config."""
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False
+    )
 
 
 # Global settings instance

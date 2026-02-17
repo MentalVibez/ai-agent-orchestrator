@@ -98,6 +98,26 @@ for i in {1..70}; do
 done
 ```
 
+## 🔒 Security Audit and Hardening
+
+- **SECURITY_AUDIT.md** – Full audit report (path traversal, run input validation, MCP config trust, run authorization, etc.) and recommended actions.
+- **File tools:** All file read/list/search/metadata tools are restricted to paths under **AGENT_WORKSPACE_ROOT** (default: process cwd). Set this to a dedicated directory in production to limit agent file access.
+- **Run API:** Goal length, context size/depth, and agent_profile_id are validated; only enabled profiles are accepted.
+
+## 🛡️ Anti–Prompt Injection (Best-Effort)
+
+User-controlled **goal** (and context) are passed into the planner LLM. To reduce prompt-injection risk:
+
+1. **Structural hardening** – The planner wraps the user goal in clear delimiters (`<<< USER GOAL >>>` … `<<< END USER GOAL >>>`) and instructs the model to treat only that block as the user’s goal and not to follow instructions embedded inside it.
+2. **Optional filter** – When **PROMPT_INJECTION_FILTER_ENABLED** is true (default), a blocklist of common injection phrases (e.g. “ignore previous instructions”, “system:”, “jailbreak”) is applied to the goal; matches are redacted before the text is sent to the LLM. Configured in `app/core/config.py` and implemented in `app/core/prompt_injection.py`.
+
+This is **best-effort mitigation**, not a complete defense: determined attackers can rephrase or encode payloads. Treat user input as untrusted and combine with validation, rate limits, and monitoring.
+
+## ⚠️ MCP and Run Authorization
+
+- **MCP config** (`config/mcp_servers.yaml`): Command and args for MCP servers are loaded from config. Treat this directory as trusted; only deployers should be able to write it. Do not set `ORCHESTRATOR_CONFIG_DIR` to a user-writable path.
+- **Runs:** Any valid API key can read any run by `run_id`. The design is single-tenant/single-key; for multi-tenant, add run–key or run–user binding.
+
 ## 📚 Additional Resources
 
 - [OWASP API Security Top 10](https://owasp.org/www-project-api-security/)

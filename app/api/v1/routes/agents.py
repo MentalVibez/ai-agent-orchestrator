@@ -1,15 +1,14 @@
 """API routes for agent management."""
 
-from fastapi import APIRouter, HTTPException, Depends, Request
-from typing import List
-from app.models.request import AgentsListResponse, AgentDetailResponse
-from app.models.agent import AgentInfo
+from fastapi import APIRouter, Depends, HTTPException, Request
+
 from app.core.agent_registry import AgentRegistry
 from app.core.auth import verify_api_key
-from app.core.rate_limit import limiter
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.core.services import get_service_container
-
+from app.models.agent import AgentInfo
+from app.models.request import AgentDetailResponse, AgentsListResponse
 
 router = APIRouter(prefix="/api/v1", tags=["agents"])
 
@@ -30,7 +29,7 @@ def get_agent_registry() -> AgentRegistry:
 async def list_agents(
     request: Request,
     api_key: str = Depends(verify_api_key),
-    registry: AgentRegistry = Depends(get_agent_registry)
+    registry: AgentRegistry = Depends(get_agent_registry),
 ) -> AgentsListResponse:
     """
     List all available agents.
@@ -50,19 +49,13 @@ async def list_agents(
                 agent_id=agent.agent_id,
                 name=agent.name,
                 description=agent.description,
-                capabilities=agent.get_capabilities()
+                capabilities=agent.get_capabilities(),
             )
             for agent in agents
         ]
-        return AgentsListResponse(
-            agents=agent_infos,
-            count=len(agent_infos)
-        )
+        return AgentsListResponse(agents=agent_infos, count=len(agent_infos))
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to list agents: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to list agents: {str(e)}")
 
 
 @router.get("/agents/{agent_id}", response_model=AgentDetailResponse)
@@ -71,7 +64,7 @@ async def get_agent(
     request: Request,
     agent_id: str,
     api_key: str = Depends(verify_api_key),
-    registry: AgentRegistry = Depends(get_agent_registry)
+    registry: AgentRegistry = Depends(get_agent_registry),
 ) -> AgentDetailResponse:
     """
     Get details for a specific agent.
@@ -91,23 +84,16 @@ async def get_agent(
     try:
         agent = registry.get(agent_id)
         if not agent:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Agent '{agent_id}' not found"
-            )
-        
+            raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
+
         agent_info = AgentInfo(
             agent_id=agent.agent_id,
             name=agent.name,
             description=agent.description,
-            capabilities=agent.get_capabilities()
+            capabilities=agent.get_capabilities(),
         )
         return AgentDetailResponse(agent=agent_info)
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get agent: {str(e)}"
-        )
-
+        raise HTTPException(status_code=500, detail=f"Failed to get agent: {str(e)}")

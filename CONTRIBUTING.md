@@ -70,6 +70,25 @@ This project adheres to a Code of Conduct. By participating, you are expected to
    ```bash
    pytest tests/
    ```
+   To run only unit tests (faster, no DB): `pytest tests/unit -v`
+
+6. Optional – lint and type check:
+   ```bash
+   pip install ruff mypy
+   ruff check app/ tests/
+   mypy app/ --ignore-missing-imports
+   ```
+
+## Adding an MCP server
+
+1. Edit `config/mcp_servers.yaml`: add an entry under `mcp_servers` with `name`, `transport: stdio`, `command`, `args`, and `enabled: true`.
+2. Restart the app; the MCP client will connect at startup and discover tools.
+3. In `config/agent_profiles.yaml`, set `allowed_mcp_servers: [your_server_id]` for any profile that should use it.
+
+## Adding an agent profile
+
+1. Edit `config/agent_profiles.yaml`: add an entry under `agent_profiles` with `name`, `description`, `role_prompt`, `allowed_mcp_servers` (list of MCP server ids or `[]` for legacy-only), and `enabled: true`.
+2. Restart the app; new profiles appear in `GET /api/v1/agent-profiles` and can be used in `POST /api/v1/run` via `agent_profile_id`.
 
 ## Code Style
 

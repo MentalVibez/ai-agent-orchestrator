@@ -1,9 +1,11 @@
 """Pydantic models for API requests and responses."""
 
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
-from app.models.agent import AgentResult, AgentInfo
-from app.models.workflow import Workflow, WorkflowResult
+
+from app.models.agent import AgentInfo, AgentResult
+from app.models.workflow import WorkflowResult
 
 
 class OrchestrateRequest(BaseModel):
@@ -11,12 +13,10 @@ class OrchestrateRequest(BaseModel):
 
     task: str = Field(..., description="Task description to be executed")
     context: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Optional context information for the task"
+        None, description="Optional context information for the task"
     )
     agent_ids: Optional[List[str]] = Field(
-        None,
-        description="Optional list of specific agent IDs to use"
+        None, description="Optional list of specific agent IDs to use"
     )
 
 
@@ -25,8 +25,7 @@ class OrchestrateResponse(BaseModel):
 
     success: bool = Field(..., description="Whether execution was successful")
     results: List[AgentResult] = Field(
-        default_factory=list,
-        description="Results from agent execution(s)"
+        default_factory=list, description="Results from agent execution(s)"
     )
     message: Optional[str] = Field(None, description="Optional message")
 
@@ -36,8 +35,7 @@ class WorkflowExecuteRequest(BaseModel):
 
     workflow_id: str = Field(..., description="Workflow identifier to execute")
     input_data: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Optional input data for the workflow"
+        None, description="Optional input data for the workflow"
     )
 
 
@@ -45,10 +43,7 @@ class WorkflowExecuteResponse(BaseModel):
     """Response model for workflow execution."""
 
     success: bool = Field(..., description="Whether workflow execution was successful")
-    result: Optional[WorkflowResult] = Field(
-        None,
-        description="Workflow execution result"
-    )
+    result: Optional[WorkflowResult] = Field(None, description="Workflow execution result")
     message: Optional[str] = Field(None, description="Optional message")
 
 
@@ -71,4 +66,6 @@ class HealthResponse(BaseModel):
     status: str = Field(..., description="Health status")
     version: str = Field(..., description="Application version")
     timestamp: str = Field(..., description="Current timestamp")
-
+    mcp_connected: Optional[bool] = Field(
+        None, description="True if at least one MCP server is connected"
+    )

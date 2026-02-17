@@ -1,8 +1,9 @@
 """Application configuration management using Pydantic Settings."""
 
 from typing import List
+
+from pydantic import ConfigDict, Field
 from pydantic_settings import BaseSettings
-from pydantic import Field, ConfigDict
 
 
 class Settings(BaseSettings):
@@ -17,15 +18,12 @@ class Settings(BaseSettings):
     # CORS Settings
     cors_origins: str = Field(
         default="https://donsylvester.dev,http://localhost:3000,http://localhost:8000",
-        alias="CORS_ORIGINS"
+        alias="CORS_ORIGINS",
     )
 
     # LLM Provider Settings
     llm_provider: str = Field(default="bedrock", alias="LLM_PROVIDER")
-    llm_model: str = Field(
-        default="anthropic.claude-3-haiku-20240307-v1:0",
-        alias="LLM_MODEL"
-    )
+    llm_model: str = Field(default="anthropic.claude-3-haiku-20240307-v1:0", alias="LLM_MODEL")
     llm_temperature: float = Field(default=0.7, alias="LLM_TEMPERATURE")
     llm_max_tokens: int = Field(default=4096, alias="LLM_MAX_TOKENS")
 
@@ -39,33 +37,33 @@ class Settings(BaseSettings):
     openai_model: str = Field(default="gpt-3.5-turbo", alias="OPENAI_MODEL")
 
     # Ollama Configuration
-    ollama_base_url: str = Field(
-        default="http://localhost:11434",
-        alias="OLLAMA_BASE_URL"
-    )
+    ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
     ollama_model: str = Field(default="llama2", alias="OLLAMA_MODEL")
 
     # Server Settings
     host: str = Field(default="0.0.0.0", alias="HOST")
     port: int = Field(default=8000, alias="PORT")
-    
+
     # Security Settings
     api_key: str = Field(default="", alias="API_KEY")
     rate_limit_per_minute: int = Field(default=60, alias="RATE_LIMIT_PER_MINUTE")
     require_api_key: bool = Field(default=True, alias="REQUIRE_API_KEY")
+    # Restrict file tools (read, list, search, metadata) to paths under this directory. Empty = use process cwd.
+    agent_workspace_root: str = Field(default="", alias="AGENT_WORKSPACE_ROOT")
+    # Best-effort prompt injection filter: redact blocklist phrases in user goal/context. Set false to disable.
+    prompt_injection_filter_enabled: bool = Field(
+        default=True, alias="PROMPT_INJECTION_FILTER_ENABLED"
+    )
+    # Planner: timeout per LLM call (seconds). 0 = no timeout.
+    planner_llm_timeout_seconds: int = Field(default=120, alias="PLANNER_LLM_TIMEOUT_SECONDS")
 
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins string into a list."""
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
-    model_config = ConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False
-    )
+    model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
 
 
 # Global settings instance
 settings = Settings()
-

@@ -1,8 +1,8 @@
 """Agent registry for managing available agents and their capabilities."""
 
 from typing import Dict, List, Optional
+
 from app.agents.base import BaseAgent
-from app.models.agent import AgentInfo, AgentCapability
 
 
 class AgentRegistry:
@@ -21,7 +21,7 @@ class AgentRegistry:
         """
         if not agent or not agent.agent_id:
             raise ValueError("Agent must have a valid agent_id")
-        
+
         self._agents[agent.agent_id] = agent
 
     def get(self, agent_id: str) -> Optional[BaseAgent]:
@@ -69,4 +69,3 @@ class AgentRegistry:
             List of agent identifiers
         """
         return list(self._agents.keys())
-

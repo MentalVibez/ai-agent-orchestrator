@@ -2,13 +2,14 @@
 
 import re
 from typing import Any, Dict, Optional
-from app.core.exceptions import ValidationError
 
+from app.core.exceptions import ValidationError
 
 # Maximum request sizes
 MAX_TASK_LENGTH = 10000  # 10KB for task description
 MAX_CONTEXT_SIZE = 50000  # 50KB for context data
 MAX_AGENT_IDS = 10  # Maximum number of agent IDs in a request
+MAX_GOAL_LENGTH = 15000  # ~15KB for run goal (planner prompt DoS mitigation)
 
 
 def validate_task(task: Optional[str]) -> str:
@@ -25,36 +26,27 @@ def validate_task(task: Optional[str]) -> str:
         ValidationError: If task is invalid
     """
     if not task:
-        raise ValidationError(
-            "Task description is required",
-            field="task"
-        )
-    
+        raise ValidationError("Task description is required", field="task")
+
     if not isinstance(task, str):
-        raise ValidationError(
-            "Task must be a string",
-            field="task"
-        )
-    
+        raise ValidationError("Task must be a string", field="task")
+
     # Check length
     if len(task) > MAX_TASK_LENGTH:
         raise ValidationError(
             f"Task description exceeds maximum length of {MAX_TASK_LENGTH} characters",
             field="task",
-            details={"max_length": MAX_TASK_LENGTH, "provided_length": len(task)}
+            details={"max_length": MAX_TASK_LENGTH, "provided_length": len(task)},
         )
-    
+
     # Check for empty or whitespace-only
     task = task.strip()
     if not task:
-        raise ValidationError(
-            "Task description cannot be empty",
-            field="task"
-        )
-    
+        raise ValidationError("Task description cannot be empty", field="task")
+
     # Basic sanitization - remove control characters except newlines and tabs
-    task = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', task)
-    
+    task = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", task)
+
     return task
 
 
@@ -73,48 +65,43 @@ def validate_context(context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """
     if context is None:
         return {}
-    
+
     if not isinstance(context, dict):
-        raise ValidationError(
-            "Context must be a dictionary",
-            field="context"
-        )
-    
+        raise ValidationError("Context must be a dictionary", field="context")
+
     # Check size (rough estimate)
     context_str = str(context)
     if len(context_str) > MAX_CONTEXT_SIZE:
         raise ValidationError(
             f"Context data exceeds maximum size of {MAX_CONTEXT_SIZE} characters",
             field="context",
-            details={"max_size": MAX_CONTEXT_SIZE, "provided_size": len(context_str)}
+            details={"max_size": MAX_CONTEXT_SIZE, "provided_size": len(context_str)},
         )
-    
+
     # Validate context keys and values
     sanitized = {}
     for key, value in context.items():
         # Validate key
         if not isinstance(key, str):
             raise ValidationError(
-                "Context keys must be strings",
-                field="context",
-                details={"invalid_key": str(key)}
+                "Context keys must be strings", field="context", details={"invalid_key": str(key)}
             )
-        
+
         # Sanitize key (alphanumeric, underscore, hyphen)
-        sanitized_key = re.sub(r'[^a-zA-Z0-9_-]', '_', key)
-        
+        sanitized_key = re.sub(r"[^a-zA-Z0-9_-]", "_", key)
+
         # Validate value types
         if isinstance(value, (str, int, float, bool, type(None))):
             # Sanitize string values
             if isinstance(value, str):
                 # Remove control characters
-                value = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', value)
+                value = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", value)
                 # Limit string length
                 if len(value) > 10000:
                     raise ValidationError(
                         f"Context value for '{key}' exceeds maximum length of 10000 characters",
                         field="context",
-                        details={"key": key, "max_length": 10000}
+                        details={"key": key, "max_length": 10000},
                     )
             sanitized[sanitized_key] = value
         elif isinstance(value, (list, dict)):
@@ -123,7 +110,7 @@ def validate_context(context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         else:
             # Convert other types to string
             sanitized[sanitized_key] = str(value)
-    
+
     return sanitized
 
 
@@ -144,17 +131,18 @@ def _validate_nested(data: Any, depth: int, max_depth: int) -> Any:
     """
     if depth > max_depth:
         raise ValidationError(
-            f"Nested data structure exceeds maximum depth of {max_depth}",
-            field="context"
+            f"Nested data structure exceeds maximum depth of {max_depth}", field="context"
         )
-    
+
     if isinstance(data, dict):
         return {k: _validate_nested(v, depth + 1, max_depth) for k, v in data.items()}
     elif isinstance(data, list):
-        return [_validate_nested(item, depth + 1, max_depth) for item in data[:100]]  # Limit list size
+        return [
+            _validate_nested(item, depth + 1, max_depth) for item in data[:100]
+        ]  # Limit list size
     elif isinstance(data, str):
         # Sanitize string
-        return re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', data)
+        return re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", data)
     else:
         return data
 
@@ -174,20 +162,17 @@ def validate_agent_ids(agent_ids: Optional[list]) -> list:
     """
     if agent_ids is None:
         return []
-    
+
     if not isinstance(agent_ids, list):
-        raise ValidationError(
-            "Agent IDs must be a list",
-            field="agent_ids"
-        )
-    
+        raise ValidationError("Agent IDs must be a list", field="agent_ids")
+
     if len(agent_ids) > MAX_AGENT_IDS:
         raise ValidationError(
             f"Maximum of {MAX_AGENT_IDS} agent IDs allowed per request",
             field="agent_ids",
-            details={"max_agents": MAX_AGENT_IDS, "provided_count": len(agent_ids)}
+            details={"max_agents": MAX_AGENT_IDS, "provided_count": len(agent_ids)},
         )
-    
+
     # Validate each agent ID
     sanitized = []
     for agent_id in agent_ids:
@@ -195,27 +180,84 @@ def validate_agent_ids(agent_ids: Optional[list]) -> list:
             raise ValidationError(
                 "Agent IDs must be strings",
                 field="agent_ids",
-                details={"invalid_id": str(agent_id)}
+                details={"invalid_id": str(agent_id)},
             )
-        
+
         # Sanitize agent ID (alphanumeric, underscore, hyphen)
-        sanitized_id = re.sub(r'[^a-zA-Z0-9_-]', '', agent_id)
+        sanitized_id = re.sub(r"[^a-zA-Z0-9_-]", "", agent_id)
         if sanitized_id != agent_id:
             raise ValidationError(
                 f"Agent ID contains invalid characters: {agent_id}",
                 field="agent_ids",
-                details={"invalid_id": agent_id}
+                details={"invalid_id": agent_id},
             )
-        
+
         if not sanitized_id:
-            raise ValidationError(
-                "Agent ID cannot be empty",
-                field="agent_ids"
-            )
-        
+            raise ValidationError("Agent ID cannot be empty", field="agent_ids")
+
         sanitized.append(sanitized_id)
-    
+
     return sanitized
+
+
+def validate_goal(goal: Optional[str]) -> str:
+    """
+    Validate and sanitize run goal (length, control chars).
+
+    Raises:
+        ValidationError: If goal is invalid
+    """
+    if not goal:
+        raise ValidationError("Goal is required", field="goal")
+    if not isinstance(goal, str):
+        raise ValidationError("Goal must be a string", field="goal")
+    if len(goal) > MAX_GOAL_LENGTH:
+        raise ValidationError(
+            f"Goal exceeds maximum length of {MAX_GOAL_LENGTH} characters",
+            field="goal",
+            details={"max_length": MAX_GOAL_LENGTH, "provided_length": len(goal)},
+        )
+    goal = goal.strip()
+    if not goal:
+        raise ValidationError("Goal cannot be empty", field="goal")
+    goal = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", goal)
+    return goal
+
+
+def validate_agent_profile_id(profile_id: Optional[str]) -> str:
+    """
+    Validate agent_profile_id against enabled profiles. Returns sanitized id.
+
+    Raises:
+        ValidationError: If profile_id is not allowed
+    """
+    from app.mcp.config_loader import get_enabled_agent_profiles
+
+    if not profile_id:
+        return "default"
+    if not isinstance(profile_id, str):
+        raise ValidationError("agent_profile_id must be a string", field="agent_profile_id")
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "", profile_id)
+    if sanitized != profile_id:
+        raise ValidationError(
+            f"agent_profile_id contains invalid characters: {profile_id}",
+            field="agent_profile_id",
+        )
+    allowed_ids = {pid for pid, _ in get_enabled_agent_profiles()}
+    if sanitized and sanitized not in allowed_ids:
+        raise ValidationError(
+            f"Unknown or disabled agent profile: {profile_id}",
+            field="agent_profile_id",
+            details={"allowed": list(allowed_ids)},
+        )
+    return sanitized or "default"
+
+
+def validate_run_context(context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Validate run context (same size/depth/sanitization as orchestrate context).
+    """
+    return validate_context(context)
 
 
 def validate_workflow_id(workflow_id: Optional[str]) -> str:
@@ -232,31 +274,20 @@ def validate_workflow_id(workflow_id: Optional[str]) -> str:
         ValidationError: If workflow ID is invalid
     """
     if not workflow_id:
-        raise ValidationError(
-            "Workflow ID is required",
-            field="workflow_id"
-        )
-    
+        raise ValidationError("Workflow ID is required", field="workflow_id")
+
     if not isinstance(workflow_id, str):
-        raise ValidationError(
-            "Workflow ID must be a string",
-            field="workflow_id"
-        )
-    
+        raise ValidationError("Workflow ID must be a string", field="workflow_id")
+
     # Sanitize workflow ID
-    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', workflow_id)
-    
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]", "", workflow_id)
+
     if not sanitized:
-        raise ValidationError(
-            "Workflow ID cannot be empty",
-            field="workflow_id"
-        )
-    
+        raise ValidationError("Workflow ID cannot be empty", field="workflow_id")
+
     if len(sanitized) > 100:
         raise ValidationError(
-            "Workflow ID exceeds maximum length of 100 characters",
-            field="workflow_id"
+            "Workflow ID exceeds maximum length of 100 characters", field="workflow_id"
         )
-    
-    return sanitized
 
+    return sanitized

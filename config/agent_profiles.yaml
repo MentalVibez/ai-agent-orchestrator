@@ -1,0 +1,50 @@
+# Agent profiles for MCP-centric runs
+# Each profile defines: name, role prompt, allowed MCP servers (or * for all), and model preference.
+
+agent_profiles:
+  default:
+    name: Default
+    description: General-purpose goal execution using available MCP tools and legacy agents
+    role_prompt: |
+      You are a helpful assistant that plans steps to achieve the user's goal.
+      You can use the available MCP tools. Output exactly one next action: either
+      a tool call (tool name + arguments as JSON) or FINISH with a final answer.
+    allowed_mcp_servers: []  # empty = use legacy orchestrator agents only; add server ids when MCP enabled
+    model: null  # use app default LLM
+    enabled: true
+
+  # Profile that can use Playwright for browser automation (navigate, click, fill, screenshot, etc.)
+  browser:
+    name: Browser / Web Automation
+    description: "Use Playwright to automate the browser: navigate, click, fill forms, extract content, take screenshots"
+    role_prompt: |
+      You are a web automation assistant. You have access to Playwright MCP tools to control a browser.
+      Use them to navigate to URLs, click elements, fill forms, read page content, or take screenshots as needed.
+      Plan one step at a time. Output exactly one JSON object: either a tool call (action "tool_call" with
+      server_id "playwright", tool_name and arguments) or FINISH with the final answer for the user.
+    allowed_mcp_servers: [playwright]
+    model: null
+    enabled: true
+
+  # Deep research: fetch URLs + browser automation (no memory server yet)
+  deep_research:
+    name: Deep Research
+    description: Multi-step research using Fetch (HTTP) and Playwright (browser); gather info and synthesize answers
+    role_prompt: |
+      You are a research agent. Use Fetch to get web page content as markdown, and Playwright when you need to
+      interact with pages (click, fill forms, navigate). Plan one step at a time. Prefer fetch for simple URL
+      content; use Playwright when the user needs interaction or JavaScript-rendered content.
+      Output exactly one JSON object: either action "tool_call" (server_id "fetch" or "playwright", tool_name, arguments)
+      or action "finish" with "answer" containing the final synthesized answer for the user.
+    allowed_mcp_servers: [fetch, playwright]
+    model: null
+    enabled: true
+
+  # productivity:
+  #   name: Personal Productivity
+  #   description: Notion, calendar, tasks
+  #   role_prompt: |
+  #     You help with tasks and scheduling. Use Notion and calendar MCP tools when available.
+  #   allowed_mcp_servers: [notion, calendar]
+  #   model: null
+  #   enabled: false

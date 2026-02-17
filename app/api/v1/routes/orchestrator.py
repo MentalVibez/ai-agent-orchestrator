@@ -1,21 +1,20 @@
 """API routes for orchestrator operations."""
 
-from fastapi import APIRouter, HTTPException, Depends, Request
-from typing import Any
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from app.core.auth import verify_api_key
+from app.core.config import settings
+from app.core.orchestrator import Orchestrator
+from app.core.rate_limit import limiter
+from app.core.services import get_service_container
+from app.core.validation import validate_agent_ids, validate_context, validate_task
+from app.core.workflow_executor import WorkflowExecutor
 from app.models.request import (
     OrchestrateRequest,
     OrchestrateResponse,
     WorkflowExecuteRequest,
-    WorkflowExecuteResponse
+    WorkflowExecuteResponse,
 )
-from app.core.orchestrator import Orchestrator
-from app.core.workflow_executor import WorkflowExecutor
-from app.core.auth import verify_api_key
-from app.core.rate_limit import limiter
-from app.core.config import settings
-from app.core.services import get_service_container
-from app.core.validation import validate_task, validate_context, validate_agent_ids
-
 
 router = APIRouter(prefix="/api/v1", tags=["orchestrator"])
 
@@ -48,7 +47,7 @@ async def orchestrate_task(
     request: Request,
     orchestrate_request: OrchestrateRequest,
     api_key: str = Depends(verify_api_key),
-    orchestrator: Orchestrator = Depends(get_orchestrator)
+    orchestrator: Orchestrator = Depends(get_orchestrator),
 ) -> OrchestrateResponse:
     """
     Submit a task to the orchestrator for execution.
@@ -67,21 +66,20 @@ async def orchestrate_task(
         task = validate_task(orchestrate_request.task)
         context = validate_context(orchestrate_request.context)
         agent_ids = validate_agent_ids(orchestrate_request.agent_ids)
-        
+
         # Get request ID for cost tracking
         request_id = getattr(request.state, "request_id", None)
-        
+
         # Route task to appropriate agent(s)
         if agent_ids:
             # Use specific agents if provided
             results = await orchestrator.coordinate_agents(
-                agent_ids=agent_ids,
-                task=task,
-                context=context
+                agent_ids=agent_ids, task=task, context=context
             )
-            
+
             # Track costs with endpoint context
             from app.core.cost_tracker import get_cost_tracker
+
             cost_tracker = get_cost_tracker()
             for result in results:
                 # Update cost records with endpoint and request_id
@@ -91,21 +89,19 @@ async def orchestrate_task(
                         record.endpoint = "/api/v1/orchestrate"
                     if not record.request_id and request_id:
                         record.request_id = request_id
-            
+
             return OrchestrateResponse(
                 success=all(r.success for r in results),
                 results=results,
-                message=f"Task executed by {len(results)} agent(s)"
+                message=f"Task executed by {len(results)} agent(s)",
             )
         else:
             # Auto-route to appropriate agent
-            result = await orchestrator.route_task(
-                task=task,
-                context=context
-            )
-            
+            result = await orchestrator.route_task(task=task, context=context)
+
             # Track cost with endpoint context
             from app.core.cost_tracker import get_cost_tracker
+
             cost_tracker = get_cost_tracker()
             recent_records = cost_tracker.get_recent_records(limit=1)
             if recent_records:
@@ -113,20 +109,17 @@ async def orchestrate_task(
                 record.endpoint = "/api/v1/orchestrate"
                 if request_id:
                     record.request_id = request_id
-            
+
             return OrchestrateResponse(
                 success=result.success,
                 results=[result],
-                message="Task executed successfully" if result.success else "Task execution failed"
+                message="Task executed successfully" if result.success else "Task execution failed",
             )
-            
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.post("/workflows", response_model=WorkflowExecuteResponse)
@@ -135,7 +128,7 @@ async def execute_workflow(
     request: Request,
     workflow_request: WorkflowExecuteRequest,
     api_key: str = Depends(verify_api_key),
-    executor: WorkflowExecutor = Depends(get_workflow_executor)
+    executor: WorkflowExecutor = Depends(get_workflow_executor),
 ) -> WorkflowExecuteResponse:
     """
     Execute a predefined workflow.
@@ -152,39 +145,32 @@ async def execute_workflow(
     try:
         # Load workflow definition
         from app.core.workflow_loader import get_workflow_loader
-        
+
         workflow_loader = get_workflow_loader()
         workflow = workflow_loader.get_workflow(workflow_request.workflow_id)
-        
+
         if not workflow:
             raise HTTPException(
-                status_code=404,
-                detail=f"Workflow '{workflow_request.workflow_id}' not found"
+                status_code=404, detail=f"Workflow '{workflow_request.workflow_id}' not found"
             )
-        
+
         if not workflow.enabled:
             raise HTTPException(
-                status_code=400,
-                detail=f"Workflow '{workflow_request.workflow_id}' is disabled"
+                status_code=400, detail=f"Workflow '{workflow_request.workflow_id}' is disabled"
             )
-        
+
         # Execute workflow
-        result = await executor.execute(
-            workflow=workflow,
-            input_data=workflow_request.input_data
-        )
-        
+        result = await executor.execute(workflow=workflow, input_data=workflow_request.input_data)
+
         return WorkflowExecuteResponse(
             success=result.success,
             result=result,
-            message="Workflow executed successfully" if result.success else "Workflow execution failed"
+            message="Workflow executed successfully"
+            if result.success
+            else "Workflow execution failed",
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to execute workflow: {str(e)}"
-        )
-
+        raise HTTPException(status_code=500, detail=f"Failed to execute workflow: {str(e)}")

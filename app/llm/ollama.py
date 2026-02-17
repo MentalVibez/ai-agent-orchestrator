@@ -1,19 +1,17 @@
 """Ollama LLM provider implementation for local models."""
 
+from typing import Any, AsyncIterator, Dict, Optional
+
 import httpx
-from typing import Dict, Any, Optional, AsyncIterator
-from app.llm.base import LLMProvider
+
 from app.core.config import settings
+from app.llm.base import LLMProvider
 
 
 class OllamaProvider(LLMProvider):
     """Ollama provider for local/open-source models."""
 
-    def __init__(
-        self,
-        base_url: Optional[str] = None,
-        model: Optional[str] = None
-    ):
+    def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None):
         """
         Initialize Ollama provider.
 
@@ -31,7 +29,7 @@ class OllamaProvider(LLMProvider):
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> str:
         """
         Generate a text response using Ollama.
@@ -59,7 +57,7 @@ class OllamaProvider(LLMProvider):
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> AsyncIterator[str]:
         """
         Stream a text response using Ollama.
@@ -87,7 +85,7 @@ class OllamaProvider(LLMProvider):
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """
         Generate a response with metadata using Ollama.
@@ -107,4 +105,3 @@ class OllamaProvider(LLMProvider):
         # 2. Extract usage information if available
         # 3. Return response with metadata
         raise NotImplementedError("generate_with_metadata method must be implemented")
-

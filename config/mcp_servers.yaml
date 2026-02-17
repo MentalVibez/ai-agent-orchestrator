@@ -1,0 +1,50 @@
+# MCP Server Registry
+# Register MCP servers the orchestrator can connect to as a client.
+# Transport: stdio (command + args) or sse (url). Auth and rate limits optional.
+
+mcp_servers:
+  # Example: local filesystem MCP (enable when server is installed)
+  # filesystem:
+  #   name: Filesystem
+  #   transport: stdio
+  #   command: npx
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\marad\\OneDrive\\Documents"]
+  #   env: {}
+  #   categories: [files, local]
+  #   enabled: false
+
+  # Fetch MCP – HTTP fetch, URL to markdown (Anthropic/modelcontextprotocol)
+  fetch:
+    name: Fetch
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-fetch"]
+    env: {}
+    categories: [web, http]
+    enabled: true
+
+  # Playwright MCP – browser automation (Microsoft; requires Node.js 18+)
+  # First run: npx may install @playwright/mcp; Playwright will download browsers if needed.
+  playwright:
+    name: Playwright
+    transport: stdio
+    command: npx
+    args: ["-y", "@playwright/mcp@latest"]
+    env: {}
+    categories: [browser, web, automation]
+    enabled: true
+
+  # Placeholder: add your first server here and set enabled: true
+  example:
+    name: Example (disabled)
+    transport: stdio
+    command: echo
+    args: []
+    env: {}
+    categories: [demo]
+    enabled: false
+
+# Which agent profiles can use which servers (optional; if omitted, all profiles can use all enabled servers)
+# agent_server_bindings:
+#   deep_research: [fetch, filesystem]
+#   productivity: [notion, calendar]

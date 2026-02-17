@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **MCP (Model Context Protocol)**: Orchestrator as MCP client; register servers in `config/mcp_servers.yaml`, agent profiles in `config/agent_profiles.yaml`. Playwright and Fetch MCP servers enabled by default; Deep Research and Browser profiles.
+- **Runs API**: `POST /api/v1/run` (goal + agent_profile_id), `GET /api/v1/runs/{run_id}`, `POST /api/v1/runs/{run_id}/cancel`, `GET /api/v1/agent-profiles`, `GET /api/v1/mcp/servers`. Planner loop with optional MCP tools or legacy orchestrator fallback.
+- **Personal Multi-Agent Console**: `GET /console` serves a single-page UI to submit goals, pick profiles, and view run status and results.
+- **Security**: File tools restricted to `AGENT_WORKSPACE_ROOT`; run request validation (goal length, context, profile allowlist); security audit (SECURITY_AUDIT.md); anti–prompt-injection (blocklist + structural hardening); planner LLM timeout and run cancellation.
+- **Quality**: CI jobs for Ruff, mypy, pip-audit; unit tests for prompt_injection, run_store, run validation; integration tests for runs API; health response includes optional `mcp_connected`; QUALITY_SUGGESTIONS.md and TODO tracking.
+
+### Changed
+- Health response model includes optional `mcp_connected` field.
+- Planner loop checks for cancelled run each step and supports configurable LLM timeout (`PLANNER_LLM_TIMEOUT_SECONDS`).
+
 ## [1.0.0] - 2025-01-27
 
 ### Added

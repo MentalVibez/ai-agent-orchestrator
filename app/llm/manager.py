@@ -1,11 +1,12 @@
 """LLM provider manager for selecting and initializing providers."""
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
+from app.core.config import settings
 from app.llm.base import LLMProvider
 from app.llm.bedrock import BedrockProvider
-from app.llm.openai import OpenAIProvider
 from app.llm.ollama import OllamaProvider
-from app.core.config import settings
+from app.llm.openai import OpenAIProvider
 
 
 class LLMManager:
@@ -17,9 +18,7 @@ class LLMManager:
         self._current_provider: Optional[LLMProvider] = None
 
     def initialize_provider(
-        self,
-        provider_name: Optional[str] = None,
-        **kwargs: Any
+        self, provider_name: Optional[str] = None, **kwargs: Any
     ) -> LLMProvider:
         """
         Initialize and set the current LLM provider.
@@ -83,4 +82,3 @@ class LLMManager:
             Current LLM provider instance or None
         """
         return self._current_provider
-

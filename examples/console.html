@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Orchestrator – Console</title>
+  <style>
+    :root { --bg: #0f0f12; --surface: #18181c; --border: #2a2a30; --text: #e4e4e7; --muted: #71717a; --accent: #a78bfa; --success: #22c55e; }
+    * { box-sizing: border-box; }
+    body { font-family: ui-sans-serif, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem; line-height: 1.5; }
+    h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 1rem 0; }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input, select, textarea { width: 100%; padding: 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.875rem; }
+    textarea { min-height: 80px; resize: vertical; }
+    button { background: var(--accent); color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 4px; font-weight: 500; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.8rem; max-height: 400px; overflow-y: auto; }
+    .status { color: var(--muted); }
+    .status.completed { color: var(--success); }
+    .step { margin: 0.5rem 0; padding-left: 0.5rem; border-left: 2px solid var(--border); }
+    .error { color: #f87171; }
+  </style>
+</head>
+<body>
+  <h1>Multi-Agent Console</h1>
+  <div class="panel">
+    <label>API Key (optional; required if server has REQUIRE_API_KEY=true)</label>
+    <input type="password" id="apiKey" placeholder="Leave empty if disabled" />
+  </div>
+  <div class="panel">
+    <label>Goal</label>
+    <textarea id="goal" placeholder="e.g. Fetch https://example.com and summarize the main heading"></textarea>
+    <label style="margin-top: 0.75rem;">Agent profile</label>
+    <select id="profile">
+      <option value="default">Default (legacy orchestrator)</option>
+    </select>
+    <button id="start" style="margin-top: 0.75rem;">Start run</button>
+  </div>
+  <div class="panel">
+    <label>Run log</label>
+    <div id="log">Idle. Enter a goal and click Start run.</div>
+  </div>
+
+  <script>
+    const apiKey = () => document.getElementById('apiKey').value.trim();
+    const headers = () => {
+      const h = { 'Content-Type': 'application/json' };
+      if (apiKey()) h['X-API-Key'] = apiKey();
+      return h;
+    };
+
+    async function loadProfiles() {
+      try {
+        const r = await fetch('/api/v1/agent-profiles', { headers: headers() });
+        if (!r.ok) return;
+        const { profiles } = await r.json();
+        const sel = document.getElementById('profile');
+        sel.innerHTML = profiles.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+      } catch (e) {
+        console.warn('Could not load profiles', e);
+      }
+    }
+    loadProfiles();
+
+    function log(msg, className = '') {
+      const el = document.getElementById('log');
+      const line = document.createElement('div');
+      line.className = className;
+      line.textContent = msg;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    document.getElementById('start').onclick = async () => {
+      const goal = document.getElementById('goal').value.trim();
+      const profileId = document.getElementById('profile').value;
+      if (!goal) { log('Enter a goal.', 'error'); return; }
+
+      const startBtn = document.getElementById('start');
+      startBtn.disabled = true;
+      document.getElementById('log').innerHTML = '';
+
+      try {
+        log('Starting run...');
+        const r = await fetch('/api/v1/run', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({ goal, agent_profile_id: profileId, context: {} }),
+        });
+        if (!r.ok) {
+          const t = await r.text();
+          log('Run failed: ' + r.status + ' ' + t, 'error');
+          return;
+        }
+        const data = await r.json();
+        const runId = data.run_id;
+        log('Run ID: ' + runId);
+        log('Polling for status...');
+
+        const poll = async () => {
+          const res = await fetch(`/api/v1/runs/${runId}`, { headers: headers() });
+          if (!res.ok) { log('Poll failed: ' + res.status, 'error'); return; }
+          const run = await res.json();
+          document.getElementById('log').innerHTML = '';
+          log('Status: ' + run.status, 'status ' + (run.status === 'completed' ? 'completed' : ''));
+          log('Goal: ' + run.goal);
+          if (run.steps && run.steps.length) {
+            log('Steps:');
+            run.steps.forEach((s, i) => {
+              if (s.kind === 'tool_call' && s.tool_call) {
+                log(`  ${i + 1}. Tool: ${s.tool_call.server_id}/${s.tool_call.tool_name}`, 'step');
+              } else if (s.kind === 'finish') {
+                log(`  ${i + 1}. Finish`, 'step');
+              }
+            });
+          }
+          if (run.answer != null) log('\nAnswer:\n' + run.answer);
+          if (run.error) log('Error: ' + run.error, 'error');
+          if (run.status !== 'completed' && run.status !== 'failed') setTimeout(poll, 2000);
+          else startBtn.disabled = false;
+        };
+        poll();
+      } catch (e) {
+        log('Error: ' + e.message, 'error');
+        startBtn.disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>

@@ -1,18 +1,16 @@
 """Database models for persistence."""
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text, JSON, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, String, Text
 from sqlalchemy.sql import func
-from datetime import datetime
+
 from app.db.database import Base
-import json
 
 
 class ExecutionHistory(Base):
     """Model for storing execution history."""
-    
+
     __tablename__ = "execution_history"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     request_id = Column(String, index=True, nullable=True)
     agent_id = Column(String, index=True, nullable=False)
@@ -25,7 +23,7 @@ class ExecutionHistory(Base):
     execution_metadata = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     execution_time_ms = Column(Float, nullable=True)
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
@@ -40,35 +38,37 @@ class ExecutionHistory(Base):
             "error": self.error,
             "metadata": self.execution_metadata,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "execution_time_ms": self.execution_time_ms
+            "execution_time_ms": self.execution_time_ms,
         }
 
 
 class AgentState(Base):
     """Model for storing agent state."""
-    
+
     __tablename__ = "agent_state"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     agent_id = Column(String, index=True, unique=True, nullable=False)
     state_data = Column(JSON, nullable=True)
-    last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    
+    last_updated = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
             "id": self.id,
             "agent_id": self.agent_id,
             "state_data": self.state_data,
-            "last_updated": self.last_updated.isoformat() if self.last_updated else None
+            "last_updated": self.last_updated.isoformat() if self.last_updated else None,
         }
 
 
 class WorkflowExecution(Base):
     """Model for storing workflow executions."""
-    
+
     __tablename__ = "workflow_executions"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     workflow_id = Column(String, index=True, nullable=False)
     input_data = Column(JSON, nullable=True)
@@ -78,7 +78,7 @@ class WorkflowExecution(Base):
     started_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     execution_time_ms = Column(Float, nullable=True)
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
@@ -90,6 +90,44 @@ class WorkflowExecution(Base):
             "error": self.error,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "execution_time_ms": self.execution_time_ms
+            "execution_time_ms": self.execution_time_ms,
         }
 
+
+class Run(Base):
+    """MCP-centric run: goal, profile, status, steps and tool calls stored as JSON."""
+
+    __tablename__ = "runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(String, unique=True, index=True, nullable=False)  # uuid
+    goal = Column(Text, nullable=False)
+    agent_profile_id = Column(String, index=True, nullable=False, default="default")
+    status = Column(String, index=True, nullable=False, default="pending")
+    error = Column(Text, nullable=True)
+    answer = Column(Text, nullable=True)
+    steps = Column(JSON, nullable=True)  # list of PlanStep-like dicts
+    tool_calls = Column(JSON, nullable=True)  # list of ToolCallRecord-like dicts
+    context = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for API response."""
+        return {
+            "run_id": self.run_id,
+            "goal": self.goal,
+            "agent_profile_id": self.agent_profile_id,
+            "status": self.status,
+            "error": self.error,
+            "answer": self.answer,
+            "steps": self.steps or [],
+            "tool_calls": self.tool_calls or [],
+            "context": self.context,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+        }

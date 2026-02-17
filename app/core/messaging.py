@@ -1,8 +1,8 @@
 """Message bus for agent coordination and communication."""
 
-from typing import Dict, Any, Optional, Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 
 
 @dataclass
@@ -61,4 +61,3 @@ class MessageBus:
         """
         # TODO: Implement message history retrieval
         raise NotImplementedError("get_history method must be implemented")
-

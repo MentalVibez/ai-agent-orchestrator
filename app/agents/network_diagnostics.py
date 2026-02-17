@@ -1,9 +1,10 @@
 """Network Diagnostics Agent for network connectivity and routing issues."""
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from app.agents.base import BaseAgent
-from app.models.agent import AgentResult
 from app.llm.base import LLMProvider
+from app.models.agent import AgentResult
 
 
 class NetworkDiagnosticsAgent(BaseAgent):
@@ -26,15 +27,11 @@ class NetworkDiagnosticsAgent(BaseAgent):
                 "latency_analysis",
                 "routing_diagnostics",
                 "dns_resolution",
-                "port_scanning"
-            ]
+                "port_scanning",
+            ],
         )
 
-    async def execute(
-        self,
-        task: str,
-        context: Optional[Dict[str, Any]] = None
-    ) -> AgentResult:
+    async def execute(self, task: str, context: Optional[Dict[str, Any]] = None) -> AgentResult:
         """
         Execute a network diagnostics task.
 
@@ -47,68 +44,63 @@ class NetworkDiagnosticsAgent(BaseAgent):
         """
         try:
             context = context or {}
-            
+
             # Use dynamic prompt generation
             from app.core.prompt_generator import get_prompt_generator
+
             prompt_gen = get_prompt_generator()
             prompts = prompt_gen.generate_agent_prompt(
-                agent_id=self.agent_id,
-                task=task,
-                context=context
+                agent_id=self.agent_id, task=task, context=context
             )
             system_prompt = prompts["system_prompt"]
             user_prompt = prompts["user_prompt"]
-            
+
             # Generate response using LLM
             response = await self._generate_response(
                 prompt=user_prompt,
                 system_prompt=system_prompt,
-                temperature=0.3  # Lower temperature for more focused technical responses
+                temperature=0.3,  # Lower temperature for more focused technical responses
             )
-            
+
             # Format output
             output = {
                 "summary": response[:200] + "..." if len(response) > 200 else response,
                 "full_analysis": response,
                 "diagnostic_type": self._identify_diagnostic_type(task),
-                "context_used": context
+                "context_used": context,
             }
-            
+
             return self._format_result(
                 success=True,
                 output=output,
                 metadata={
                     "agent_id": self.agent_id,
                     "task": task,
-                    "context_keys": list(context.keys()) if context else []
-                }
+                    "context_keys": list(context.keys()) if context else [],
+                },
             )
-            
+
         except Exception as e:
             return self._format_result(
                 success=False,
                 output={},
                 error=f"Network diagnostics failed: {str(e)}",
-                metadata={
-                    "agent_id": self.agent_id,
-                    "task": task
-                }
+                metadata={"agent_id": self.agent_id, "task": task},
             )
-    
+
     def _identify_diagnostic_type(self, task: str) -> str:
         """Identify the type of network diagnostic needed."""
         task_lower = task.lower()
-        
-        if any(keyword in task_lower for keyword in ['ping', 'connectivity', 'reachable']):
+
+        if any(keyword in task_lower for keyword in ["ping", "connectivity", "reachable"]):
             return "connectivity_check"
-        elif any(keyword in task_lower for keyword in ['dns', 'resolve', 'domain']):
+        elif any(keyword in task_lower for keyword in ["dns", "resolve", "domain"]):
             return "dns_resolution"
-        elif any(keyword in task_lower for keyword in ['latency', 'delay', 'slow']):
+        elif any(keyword in task_lower for keyword in ["latency", "delay", "slow"]):
             return "latency_analysis"
-        elif any(keyword in task_lower for keyword in ['route', 'traceroute', 'path']):
+        elif any(keyword in task_lower for keyword in ["route", "traceroute", "path"]):
             return "routing_analysis"
-        elif any(keyword in task_lower for keyword in ['port', 'scan', 'firewall']):
+        elif any(keyword in task_lower for keyword in ["port", "scan", "firewall"]):
             return "port_analysis"
         else:
             return "general_diagnostics"
-

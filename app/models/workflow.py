@@ -1,9 +1,10 @@
 """Pydantic models for workflows."""
 
-from typing import Dict, List, Any, Optional
-from pydantic import BaseModel, Field
 from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class WorkflowStepStatus(str, Enum):
@@ -24,12 +25,10 @@ class WorkflowStep(BaseModel):
     agent_id: str = Field(..., description="Agent to execute this step")
     task: str = Field(..., description="Task description for the agent")
     depends_on: List[str] = Field(
-        default_factory=list,
-        description="List of step IDs this step depends on"
+        default_factory=list, description="List of step IDs this step depends on"
     )
     context: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Optional context data for the step"
+        None, description="Optional context data for the step"
     )
 
 
@@ -52,8 +51,7 @@ class WorkflowStepResult(BaseModel):
     error: Optional[str] = Field(None, description="Error message if step failed")
     duration: Optional[float] = Field(None, description="Step execution duration in seconds")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
-        description="Step execution timestamp"
+        default_factory=datetime.utcnow, description="Step execution timestamp"
     )
 
 
@@ -63,20 +61,13 @@ class WorkflowResult(BaseModel):
     workflow_id: str = Field(..., description="Workflow identifier")
     success: bool = Field(..., description="Whether workflow completed successfully")
     step_results: List[WorkflowStepResult] = Field(
-        default_factory=list,
-        description="Results from each workflow step"
+        default_factory=list, description="Results from each workflow step"
     )
-    output: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Aggregated workflow output"
-    )
+    output: Optional[Dict[str, Any]] = Field(None, description="Aggregated workflow output")
     error: Optional[str] = Field(None, description="Error message if workflow failed")
     duration: Optional[float] = Field(
-        None,
-        description="Total workflow execution duration in seconds"
+        None, description="Total workflow execution duration in seconds"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
-        description="Workflow execution timestamp"
+        default_factory=datetime.utcnow, description="Workflow execution timestamp"
     )
-

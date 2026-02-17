@@ -1,15 +1,15 @@
 """API routes for metrics and cost tracking."""
 
-from fastapi import APIRouter, HTTPException, Depends, Request, Query
-from typing import Optional
 from datetime import datetime, timedelta
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+
 from app.core.auth import verify_api_key
-from app.core.rate_limit import limiter
 from app.core.config import settings
 from app.core.cost_tracker import get_cost_tracker
-from app.models.metrics import CostMetricsResponse, CostMetrics, CostRecordResponse
 from app.core.rate_limit import limiter
-
+from app.models.metrics import CostMetrics, CostMetricsResponse, CostRecordResponse
 
 router = APIRouter(prefix="/api/v1", tags=["metrics"])
 
@@ -21,37 +21,37 @@ async def get_cost_metrics(
     days: int = Query(default=7, ge=1, le=90, description="Number of days to analyze"),
     endpoint: Optional[str] = Query(None, description="Filter by endpoint"),
     agent_id: Optional[str] = Query(None, description="Filter by agent ID"),
-    api_key: str = Depends(verify_api_key)
+    api_key: str = Depends(verify_api_key),
 ) -> CostMetricsResponse:
     """
     Get cost metrics and analytics.
-    
+
     Args:
         request: FastAPI request object
         days: Number of days to analyze
         endpoint: Optional endpoint filter
         agent_id: Optional agent filter
         api_key: Verified API key
-        
+
     Returns:
         CostMetricsResponse with cost analytics
     """
     try:
         cost_tracker = get_cost_tracker()
-        
+
         # Calculate date range
         end_date = datetime.utcnow()
         start_date = end_date - timedelta(days=days)
-        
+
         # Get metrics
         total_cost = cost_tracker.get_total_cost(start_date, end_date)
-        
+
         # Apply filters if provided
         if endpoint or agent_id:
             # Filter records manually
             cost_by_agent = cost_tracker.get_cost_by_agent(start_date, end_date)
             cost_by_endpoint = cost_tracker.get_cost_by_endpoint(start_date, end_date)
-            
+
             if agent_id:
                 cost_by_agent = {k: v for k, v in cost_by_agent.items() if k == agent_id}
             if endpoint:
@@ -59,9 +59,9 @@ async def get_cost_metrics(
         else:
             cost_by_agent = cost_tracker.get_cost_by_agent(start_date, end_date)
             cost_by_endpoint = cost_tracker.get_cost_by_endpoint(start_date, end_date)
-        
+
         token_usage = cost_tracker.get_token_usage(start_date, end_date)
-        
+
         # Get recent records
         recent_records = cost_tracker.get_recent_records(limit=50)
         recent_records_response = [
@@ -75,32 +75,29 @@ async def get_cost_metrics(
                 cost=record.cost,
                 agent_id=record.agent_id,
                 endpoint=record.endpoint,
-                request_id=record.request_id
+                request_id=record.request_id,
             )
             for record in recent_records
         ]
-        
+
         metrics = CostMetrics(
             total_cost=total_cost,
             period_start=start_date.isoformat(),
             period_end=end_date.isoformat(),
             cost_by_agent=cost_by_agent,
             cost_by_endpoint=cost_by_endpoint,
-            token_usage=token_usage
+            token_usage=token_usage,
         )
-        
+
         return CostMetricsResponse(
             success=True,
             metrics=metrics,
             recent_records=recent_records_response,
-            message=f"Cost metrics for last {days} days"
+            message=f"Cost metrics for last {days} days",
         )
-        
+
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to retrieve cost metrics: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve cost metrics: {str(e)}")
 
 
 @router.get("/metrics/costs/daily", response_model=CostMetricsResponse)
@@ -110,70 +107,65 @@ async def get_daily_cost(
     date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format (default: today)"),
     endpoint: Optional[str] = Query(None, description="Filter by endpoint"),
     agent_id: Optional[str] = Query(None, description="Filter by agent ID"),
-    api_key: str = Depends(verify_api_key)
+    api_key: str = Depends(verify_api_key),
 ) -> CostMetricsResponse:
     """
     Get daily cost metrics.
-    
+
     Args:
         request: FastAPI request object
         date: Date to analyze (YYYY-MM-DD)
         endpoint: Optional endpoint filter
         agent_id: Optional agent filter
         api_key: Verified API key
-        
+
     Returns:
         CostMetricsResponse with daily cost metrics
     """
     try:
         cost_tracker = get_cost_tracker()
-        
+
         # Parse date
         if date:
             target_date = datetime.strptime(date, "%Y-%m-%d").date()
         else:
             target_date = datetime.utcnow().date()
-        
-        daily_cost = cost_tracker.get_daily_cost(date=target_date, endpoint=endpoint, agent_id=agent_id)
-        
+
+        daily_cost = cost_tracker.get_daily_cost(
+            date=target_date, endpoint=endpoint, agent_id=agent_id
+        )
+
         # Get breakdowns
         start = datetime.combine(target_date, datetime.min.time())
         end = datetime.combine(target_date, datetime.max.time())
-        
+
         cost_by_agent = cost_tracker.get_cost_by_agent(start, end)
         if agent_id:
             cost_by_agent = {k: v for k, v in cost_by_agent.items() if k == agent_id}
-        
+
         cost_by_endpoint = cost_tracker.get_cost_by_endpoint(start, end)
         if endpoint:
             cost_by_endpoint = {k: v for k, v in cost_by_endpoint.items() if k == endpoint}
-        
+
         token_usage = cost_tracker.get_token_usage(start, end)
-        
+
         metrics = CostMetrics(
             total_cost=daily_cost,
             period_start=start.isoformat(),
             period_end=end.isoformat(),
             cost_by_agent=cost_by_agent,
             cost_by_endpoint=cost_by_endpoint,
-            token_usage=token_usage
+            token_usage=token_usage,
         )
-        
+
         return CostMetricsResponse(
             success=True,
             metrics=metrics,
             recent_records=[],
-            message=f"Daily cost for {target_date}"
-        )
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid date format: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to retrieve daily cost: {str(e)}"
+            message=f"Daily cost for {target_date}",
         )
 
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve daily cost: {str(e)}")

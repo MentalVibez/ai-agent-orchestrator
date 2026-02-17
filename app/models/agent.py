@@ -1,8 +1,9 @@
 """Pydantic models for agents."""
 
-from typing import Dict, List, Any, Optional
-from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class AgentCapability(BaseModel):
@@ -19,8 +20,7 @@ class AgentInfo(BaseModel):
     name: str = Field(..., description="Agent name")
     description: str = Field(..., description="Agent description")
     capabilities: List[AgentCapability] = Field(
-        default_factory=list,
-        description="List of agent capabilities"
+        default_factory=list, description="List of agent capabilities"
     )
 
 
@@ -32,12 +32,5 @@ class AgentResult(BaseModel):
     success: bool = Field(..., description="Whether execution was successful")
     output: Any = Field(..., description="Output data from agent")
     error: Optional[str] = Field(None, description="Error message if execution failed")
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Additional metadata"
-    )
-    timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
-        description="Execution timestamp"
-    )
-
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Execution timestamp")

@@ -1,11 +1,10 @@
 """Pytest configuration and shared fixtures."""
 
 import pytest
-from typing import Generator
+
+from app.agents.network_diagnostics import NetworkDiagnosticsAgent
 from app.core.agent_registry import AgentRegistry
 from app.core.orchestrator import Orchestrator
-from app.agents.network_diagnostics import NetworkDiagnosticsAgent
-from app.llm.base import LLMProvider
 from tests.fixtures.mock_llm import MockLLMProvider
 
 
@@ -19,8 +18,7 @@ def mock_llm_provider() -> MockLLMProvider:
 def mock_llm_with_responses() -> MockLLMProvider:
     """Create a mock LLM provider with predefined responses."""
     responses = {
-        "Network Diagnostics Task: Check connectivity\n\nPlease provide:\n1. Analysis of the network issue\n2. Recommended diagnostic steps\n3. Potential causes\n4. Troubleshooting recommendations": 
-        "Network connectivity analysis: The host appears to be reachable. Recommended steps: 1) Check firewall rules, 2) Verify DNS resolution, 3) Test with ping. Potential causes: Network congestion or firewall blocking. Troubleshooting: Use traceroute to identify the issue."
+        "Network Diagnostics Task: Check connectivity\n\nPlease provide:\n1. Analysis of the network issue\n2. Recommended diagnostic steps\n3. Potential causes\n4. Troubleshooting recommendations": "Network connectivity analysis: The host appears to be reachable. Recommended steps: 1) Check firewall rules, 2) Verify DNS resolution, 3) Test with ping. Potential causes: Network congestion or firewall blocking. Troubleshooting: Use traceroute to identify the issue."
     }
     return MockLLMProvider(responses=responses)
 
@@ -44,4 +42,3 @@ def orchestrator(agent_registry: AgentRegistry) -> Orchestrator:
 def network_agent(mock_llm_with_responses: MockLLMProvider) -> NetworkDiagnosticsAgent:
     """Create a network diagnostics agent for testing."""
     return NetworkDiagnosticsAgent(llm_provider=mock_llm_with_responses)
-

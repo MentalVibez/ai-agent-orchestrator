@@ -1,7 +1,7 @@
 """Abstract base class for LLM providers."""
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, AsyncIterator
+from typing import Any, AsyncIterator, Dict, Optional
 
 
 class LLMProvider(ABC):
@@ -14,7 +14,7 @@ class LLMProvider(ABC):
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> str:
         """
         Generate a text response from the LLM.
@@ -38,7 +38,7 @@ class LLMProvider(ABC):
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> AsyncIterator[str]:
         """
         Stream a text response from the LLM.
@@ -62,7 +62,7 @@ class LLMProvider(ABC):
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """
         Generate a response with metadata (tokens used, latency, etc.).
@@ -78,4 +78,3 @@ class LLMProvider(ABC):
             Dictionary containing response and metadata
         """
         raise NotImplementedError("generate_with_metadata method must be implemented")
-

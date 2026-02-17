@@ -1,16 +1,16 @@
 """Custom exception classes for the orchestrator."""
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 class OrchestratorError(Exception):
     """Base exception for orchestrator errors."""
-    
+
     def __init__(
         self,
         message: str,
         error_code: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize orchestrator error.
@@ -28,12 +28,9 @@ class OrchestratorError(Exception):
 
 class AgentError(OrchestratorError):
     """Exception raised by agent operations."""
-    
+
     def __init__(
-        self,
-        message: str,
-        agent_id: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None
+        self, message: str, agent_id: Optional[str] = None, details: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize agent error.
@@ -49,12 +46,9 @@ class AgentError(OrchestratorError):
 
 class LLMProviderError(OrchestratorError):
     """Exception raised by LLM provider operations."""
-    
+
     def __init__(
-        self,
-        message: str,
-        provider: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None
+        self, message: str, provider: Optional[str] = None, details: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize LLM provider error.
@@ -70,12 +64,9 @@ class LLMProviderError(OrchestratorError):
 
 class ValidationError(OrchestratorError):
     """Exception raised for validation errors."""
-    
+
     def __init__(
-        self,
-        message: str,
-        field: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None
+        self, message: str, field: Optional[str] = None, details: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize validation error.
@@ -91,12 +82,12 @@ class ValidationError(OrchestratorError):
 
 class ConfigurationError(OrchestratorError):
     """Exception raised for configuration errors."""
-    
+
     def __init__(
         self,
         message: str,
         config_key: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None
+        details: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize configuration error.
@@ -112,12 +103,9 @@ class ConfigurationError(OrchestratorError):
 
 class ServiceUnavailableError(OrchestratorError):
     """Exception raised when a service is unavailable."""
-    
+
     def __init__(
-        self,
-        message: str,
-        service: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None
+        self, message: str, service: Optional[str] = None, details: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize service unavailable error.
@@ -129,4 +117,3 @@ class ServiceUnavailableError(OrchestratorError):
         """
         super().__init__(message, error_code="SERVICE_UNAVAILABLE", details=details)
         self.service = service
-

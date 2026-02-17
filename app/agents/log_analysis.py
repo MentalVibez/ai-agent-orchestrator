@@ -1,9 +1,10 @@
 """Log Analysis Agent for log parsing and error detection."""
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from app.agents.base import BaseAgent
-from app.models.agent import AgentResult
 from app.llm.base import LLMProvider
+from app.models.agent import AgentResult
 
 
 class LogAnalysisAgent(BaseAgent):
@@ -26,15 +27,11 @@ class LogAnalysisAgent(BaseAgent):
                 "error_detection",
                 "pattern_matching",
                 "log_aggregation",
-                "troubleshooting"
-            ]
+                "troubleshooting",
+            ],
         )
 
-    async def execute(
-        self,
-        task: str,
-        context: Optional[Dict[str, Any]] = None
-    ) -> AgentResult:
+    async def execute(self, task: str, context: Optional[Dict[str, Any]] = None) -> AgentResult:
         """
         Execute a log analysis task.
 
@@ -52,4 +49,3 @@ class LogAnalysisAgent(BaseAgent):
         # 4. Generate insights and recommendations
         # 5. Return formatted AgentResult
         raise NotImplementedError("execute method must be implemented")
-

@@ -1,7 +1,10 @@
 """API routes for metrics and cost tracking."""
 
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -96,8 +99,9 @@ async def get_cost_metrics(
             message=f"Cost metrics for last {days} days",
         )
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve cost metrics: {str(e)}")
+    except Exception:
+        logger.exception("Failed to retrieve cost metrics")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/metrics/costs/daily", response_model=CostMetricsResponse)
@@ -165,7 +169,8 @@ async def get_daily_cost(
             message=f"Daily cost for {target_date}",
         )
 
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve daily cost: {str(e)}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+    except Exception:
+        logger.exception("Failed to retrieve daily cost")
+        raise HTTPException(status_code=500, detail="Internal server error")

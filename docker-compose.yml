@@ -15,8 +15,10 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
     volumes:
-      # Mount config files if needed (read-only)
+      # Mount config files (read-only)
       - ./config:/app/config:ro
+      # Persist SQLite database across container restarts
+      - orchestrator-data:/app/data
     networks:
       - orchestrator-network
     healthcheck:
@@ -26,7 +28,9 @@ services:
       retries: 3
       start_period: 10s
 
+volumes:
+  orchestrator-data:
+
 networks:
   orchestrator-network:
     driver: bridge
-

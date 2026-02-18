@@ -2,8 +2,12 @@
 
 from typing import Optional
 
+from app.agents.ansible_agent import AnsibleAgent
 from app.agents.code_review import CodeReviewAgent
+from app.agents.infrastructure import InfrastructureAgent
+from app.agents.log_analysis import LogAnalysisAgent
 from app.agents.network_diagnostics import NetworkDiagnosticsAgent
+from app.agents.osquery_agent import OsqueryAgent
 from app.agents.system_monitoring import SystemMonitoringAgent
 from app.core.agent_registry import AgentRegistry
 from app.core.orchestrator import Orchestrator
@@ -48,6 +52,18 @@ class ServiceContainer:
 
         code_review_agent = CodeReviewAgent(llm_provider=llm_provider)
         self._agent_registry.register(code_review_agent)
+
+        osquery_agent = OsqueryAgent(llm_provider=llm_provider)
+        self._agent_registry.register(osquery_agent)
+
+        ansible_agent = AnsibleAgent(llm_provider=llm_provider)
+        self._agent_registry.register(ansible_agent)
+
+        log_analysis_agent = LogAnalysisAgent(llm_provider=llm_provider)
+        self._agent_registry.register(log_analysis_agent)
+
+        infrastructure_agent = InfrastructureAgent(llm_provider=llm_provider)
+        self._agent_registry.register(infrastructure_agent)
 
         # Initialize Orchestrator
         self._orchestrator = Orchestrator(agent_registry=self._agent_registry)

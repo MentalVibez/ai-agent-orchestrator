@@ -1,6 +1,10 @@
 """API routes for orchestrator operations."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+
+logger = logging.getLogger(__name__)
 
 from app.core.auth import verify_api_key
 from app.core.config import settings
@@ -118,8 +122,9 @@ async def orchestrate_task(
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    except Exception:
+        logger.exception("Orchestrate task failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/workflows", response_model=WorkflowExecuteResponse)
@@ -172,5 +177,6 @@ async def execute_workflow(
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to execute workflow: {str(e)}")
+    except Exception:
+        logger.exception("Workflow execution failed")
+        raise HTTPException(status_code=500, detail="Internal server error")

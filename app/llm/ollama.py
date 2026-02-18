@@ -1,5 +1,6 @@
 """Ollama LLM provider implementation for local models."""
 
+import json
 from typing import Any, AsyncIterator, Dict, Optional
 
 import httpx
@@ -21,7 +22,31 @@ class OllamaProvider(LLMProvider):
         """
         self.base_url = base_url or settings.ollama_base_url
         self.model = model or settings.ollama_model
-        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=60.0)
+        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=120.0)
+
+    def _build_payload(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        temperature: Optional[float],
+        max_tokens: Optional[int],
+        stream: bool,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": stream,
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+        options: Dict[str, Any] = {}
+        if temperature is not None:
+            options["temperature"] = temperature
+        if max_tokens is not None:
+            options["num_predict"] = max_tokens
+        if options:
+            payload["options"] = options
+        return payload
 
     async def generate(
         self,
@@ -31,25 +56,11 @@ class OllamaProvider(LLMProvider):
         max_tokens: Optional[int] = None,
         **kwargs: Any,
     ) -> str:
-        """
-        Generate a text response using Ollama.
-
-        Args:
-            prompt: User prompt
-            system_prompt: Optional system prompt
-            temperature: Sampling temperature
-            max_tokens: Maximum tokens to generate
-            **kwargs: Additional parameters
-
-        Returns:
-            Generated text response
-        """
-        # TODO: Implement Ollama text generation
-        # 1. Prepare request payload
-        # 2. POST to /api/generate endpoint
-        # 3. Extract response text
-        # 4. Handle errors appropriately
-        raise NotImplementedError("generate method must be implemented")
+        payload = self._build_payload(prompt, system_prompt, temperature, max_tokens, stream=False)
+        response = await self.client.post("/api/generate", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        return data.get("response", "")
 
     async def stream(
         self,
@@ -59,25 +70,21 @@ class OllamaProvider(LLMProvider):
         max_tokens: Optional[int] = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
-        """
-        Stream a text response using Ollama.
-
-        Args:
-            prompt: User prompt
-            system_prompt: Optional system prompt
-            temperature: Sampling temperature
-            max_tokens: Maximum tokens to generate
-            **kwargs: Additional parameters
-
-        Yields:
-            Text chunks as they are generated
-        """
-        # TODO: Implement Ollama streaming
-        # 1. Prepare request payload
-        # 2. POST to /api/generate with stream=True
-        # 3. Parse streaming response chunks
-        # 4. Yield text chunks as they arrive
-        raise NotImplementedError("stream method must be implemented")
+        payload = self._build_payload(prompt, system_prompt, temperature, max_tokens, stream=True)
+        async with self.client.stream("POST", "/api/generate", json=payload) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                try:
+                    chunk = json.loads(line)
+                    text = chunk.get("response", "")
+                    if text:
+                        yield text
+                    if chunk.get("done"):
+                        break
+                except json.JSONDecodeError:
+                    continue
 
     async def generate_with_metadata(
         self,
@@ -87,21 +94,22 @@ class OllamaProvider(LLMProvider):
         max_tokens: Optional[int] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        """
-        Generate a response with metadata using Ollama.
-
-        Args:
-            prompt: User prompt
-            system_prompt: Optional system prompt
-            temperature: Sampling temperature
-            max_tokens: Maximum tokens to generate
-            **kwargs: Additional parameters
-
-        Returns:
-            Dictionary containing response and metadata
-        """
-        # TODO: Implement Ollama generation with metadata
-        # 1. Call generate method
-        # 2. Extract usage information if available
-        # 3. Return response with metadata
-        raise NotImplementedError("generate_with_metadata method must be implemented")
+        payload = self._build_payload(prompt, system_prompt, temperature, max_tokens, stream=False)
+        response = await self.client.post("/api/generate", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        return {
+            "response": data.get("response", ""),
+            "model": data.get("model", self.model),
+            "provider": "ollama",
+            "usage": {
+                "prompt_tokens": data.get("prompt_eval_count", 0),
+                "completion_tokens": data.get("eval_count", 0),
+                "total_tokens": data.get("prompt_eval_count", 0) + data.get("eval_count", 0),
+            },
+            "metadata": {
+                "total_duration": data.get("total_duration"),
+                "load_duration": data.get("load_duration"),
+                "eval_duration": data.get("eval_duration"),
+            },
+        }

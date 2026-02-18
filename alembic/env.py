@@ -22,7 +22,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Set SQLAlchemy URL from environment or config
-database_url = os.getenv("DATABASE_URL", "sqlite:///./orchestrator.db")
+database_url = os.getenv("DATABASE_URL", "sqlite:////app/data/orchestrator.db")
 config.set_main_option("sqlalchemy.url", database_url)
 
 # add your model's MetaData object here for 'autogenerate' support

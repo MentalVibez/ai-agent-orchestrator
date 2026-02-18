@@ -7,12 +7,13 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.v1.routes import agents, metrics, orchestrator, runs
+from app.api.v1.routes import agents, metrics, orchestrator, runs, webhooks
+from app.core.auth import verify_api_key
 from app.core.config import settings
 from app.core.exceptions import (
     AgentError,
@@ -98,13 +99,13 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error during shutdown: {str(e)}", exc_info=True)
 
 
-# Initialize FastAPI application
+# Initialize FastAPI application — disable interactive docs in production
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="Multi-agent AI orchestrator for IT diagnostics and engineering workflows",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if settings.debug else None,
+    redoc_url="/redoc" if settings.debug else None,
     lifespan=lifespan,
 )
 
@@ -317,8 +318,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        response.headers["Content-Security-Policy"] = "default-src 'self'"
+        # Only send HSTS when actually running over HTTPS to avoid breaking HTTP dev setups
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; "
+            "img-src 'self' data:; "
+            "font-src 'self' cdn.jsdelivr.net"
+        )
 
         return response
 
@@ -327,13 +336,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
-# Configure CORS
+# Configure CORS — narrow methods/headers to reduce attack surface
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["X-API-Key", "Content-Type", "Accept"],
 )
 
 # Include API routers
@@ -341,6 +350,7 @@ app.include_router(orchestrator.router)
 app.include_router(agents.router)
 app.include_router(metrics.router)
 app.include_router(runs.router)
+app.include_router(webhooks.router)
 
 
 @app.get("/", tags=["root"])
@@ -368,46 +378,85 @@ async def console():
     return FileResponse(path, media_type="text/html")
 
 
+@app.get("/metrics", tags=["monitoring"])
+@limiter.limit("30/minute")
+async def prometheus_metrics(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Prometheus scrape endpoint for metrics (DEX stack: Prometheus/Grafana).
+    Returns metrics in Prometheus text exposition format.
+    Requires X-API-Key authentication — configure Prometheus with the same key.
+    """
+    from app.core.metrics import get_metrics
+
+    return Response(
+        content=get_metrics(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
+
+
+def _check_database_liveness() -> bool:
+    """Verify the database is reachable with a lightweight query."""
+    try:
+        from sqlalchemy import text
+
+        from app.db.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+            return True
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning("Health check: database liveness check failed: %s", e)
+        return False
+
+
 @app.get("/api/v1/health", response_model=HealthResponse, tags=["health"])
 @limiter.limit(f"{settings.rate_limit_per_minute}/minute")
 async def health_check(request: Request) -> HealthResponse:
     """
-    Health check endpoint with dependency validation.
+    Health check endpoint that verifies actual system functionality.
+
+    Checks:
+    - Agent registry (agents registered)
+    - Database liveness (SELECT 1)
+    - LLM provider initialization
+    - MCP connection status (optional)
 
     Returns:
-        HealthResponse with status information
+        HealthResponse with status: healthy | degraded | unhealthy
     """
     try:
-        # Check if services are initialized
         container = get_service_container()
         agent_registry = container.get_agent_registry()
-        agents = agent_registry.get_all()
-        agents_count = len(agents)
+        agents_list = agent_registry.get_all()
+        agents_count = len(agents_list)
+
+        issues = []
 
         # Check agent registry
         if agents_count == 0:
-            logger.warning("Health check: No agents registered")
-            return HealthResponse(
-                status="degraded",
-                version=settings.app_version,
-                timestamp=datetime.utcnow().isoformat(),
-                mcp_connected=None,
-            )
+            issues.append("No agents registered")
 
-        # Check LLM provider (basic check - try to get provider)
+        # Check database liveness
+        db_ok = _check_database_liveness()
+        if not db_ok:
+            issues.append("Database not reachable")
+
+        # Check LLM provider is initialized
+        llm_ok = False
         try:
             llm_manager = container._llm_manager
-            if llm_manager:
-                # Provider is initialized
-                pass
+            provider = llm_manager.get_provider() if llm_manager else None
+            llm_ok = provider is not None
         except Exception as e:
-            logger.warning(f"Health check: LLM provider check failed: {str(e)}")
-            return HealthResponse(
-                status="degraded",
-                version=settings.app_version,
-                timestamp=datetime.utcnow().isoformat(),
-                mcp_connected=None,
-            )
+            logger.warning("Health check: LLM provider unavailable: %s", e)
+        if not llm_ok:
+            issues.append("LLM provider not initialized")
 
         # Optional: MCP connection status
         mcp_connected = None
@@ -418,9 +467,19 @@ async def health_check(request: Request) -> HealthResponse:
         except Exception:
             pass
 
-        status = "healthy"
+        # Determine overall status
+        if "Database not reachable" in issues or "No agents registered" in issues:
+            overall_status = "unhealthy"
+        elif issues:
+            overall_status = "degraded"
+        else:
+            overall_status = "healthy"
+
+        if issues:
+            logger.warning("Health check issues: %s", issues)
+
         return HealthResponse(
-            status=status,
+            status=overall_status,
             version=settings.app_version,
             timestamp=datetime.utcnow().isoformat(),
             mcp_connected=mcp_connected,

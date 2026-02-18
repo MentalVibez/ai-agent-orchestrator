@@ -1,8 +1,9 @@
 """OpenAI LLM provider implementation."""
 
+import time
 from typing import Any, AsyncIterator, Dict, Optional
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAIError
 
 from app.core.config import settings
 from app.llm.base import LLMProvider
@@ -23,6 +24,13 @@ class OpenAIProvider(LLMProvider):
         self.model = model or settings.openai_model
         self.client = AsyncOpenAI(api_key=self.api_key)
 
+    def _build_messages(self, prompt: str, system_prompt: Optional[str]) -> list:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        return messages
+
     async def generate(
         self,
         prompt: str,
@@ -31,25 +39,20 @@ class OpenAIProvider(LLMProvider):
         max_tokens: Optional[int] = None,
         **kwargs: Any,
     ) -> str:
-        """
-        Generate a text response using OpenAI.
+        try:
+            params: Dict[str, Any] = {
+                "model": self.model,
+                "messages": self._build_messages(prompt, system_prompt),
+            }
+            if temperature is not None:
+                params["temperature"] = temperature
+            if max_tokens is not None:
+                params["max_tokens"] = max_tokens
 
-        Args:
-            prompt: User prompt
-            system_prompt: Optional system prompt
-            temperature: Sampling temperature
-            max_tokens: Maximum tokens to generate
-            **kwargs: Additional parameters
-
-        Returns:
-            Generated text response
-        """
-        # TODO: Implement OpenAI text generation
-        # 1. Prepare messages list (system + user)
-        # 2. Call client.chat.completions.create
-        # 3. Extract text from response
-        # 4. Handle errors appropriately
-        raise NotImplementedError("generate method must be implemented")
+            response = await self.client.chat.completions.create(**params)
+            return response.choices[0].message.content or ""
+        except OpenAIError as e:
+            raise RuntimeError(f"OpenAI API error: {e}") from e
 
     async def stream(
         self,
@@ -59,24 +62,24 @@ class OpenAIProvider(LLMProvider):
         max_tokens: Optional[int] = None,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
-        """
-        Stream a text response using OpenAI.
+        params: Dict[str, Any] = {
+            "model": self.model,
+            "messages": self._build_messages(prompt, system_prompt),
+            "stream": True,
+        }
+        if temperature is not None:
+            params["temperature"] = temperature
+        if max_tokens is not None:
+            params["max_tokens"] = max_tokens
 
-        Args:
-            prompt: User prompt
-            system_prompt: Optional system prompt
-            temperature: Sampling temperature
-            max_tokens: Maximum tokens to generate
-            **kwargs: Additional parameters
-
-        Yields:
-            Text chunks as they are generated
-        """
-        # TODO: Implement OpenAI streaming
-        # 1. Prepare messages list
-        # 2. Call client.chat.completions.create with stream=True
-        # 3. Iterate over stream and yield text chunks
-        raise NotImplementedError("stream method must be implemented")
+        try:
+            async with await self.client.chat.completions.create(**params) as stream:
+                async for chunk in stream:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        yield delta
+        except OpenAIError as e:
+            raise RuntimeError(f"OpenAI API error: {e}") from e
 
     async def generate_with_metadata(
         self,
@@ -86,21 +89,36 @@ class OpenAIProvider(LLMProvider):
         max_tokens: Optional[int] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        """
-        Generate a response with metadata using OpenAI.
+        try:
+            params: Dict[str, Any] = {
+                "model": self.model,
+                "messages": self._build_messages(prompt, system_prompt),
+            }
+            if temperature is not None:
+                params["temperature"] = temperature
+            if max_tokens is not None:
+                params["max_tokens"] = max_tokens
 
-        Args:
-            prompt: User prompt
-            system_prompt: Optional system prompt
-            temperature: Sampling temperature
-            max_tokens: Maximum tokens to generate
-            **kwargs: Additional parameters
+            start = time.monotonic()
+            response = await self.client.chat.completions.create(**params)
+            latency_ms = (time.monotonic() - start) * 1000
 
-        Returns:
-            Dictionary containing response and metadata
-        """
-        # TODO: Implement OpenAI generation with metadata
-        # 1. Call generate method
-        # 2. Extract usage information from response
-        # 3. Return response with metadata (tokens, latency, etc.)
-        raise NotImplementedError("generate_with_metadata method must be implemented")
+            text = response.choices[0].message.content or ""
+            usage = response.usage
+
+            return {
+                "response": text,
+                "model": response.model,
+                "provider": "openai",
+                "usage": {
+                    "prompt_tokens": usage.prompt_tokens if usage else 0,
+                    "completion_tokens": usage.completion_tokens if usage else 0,
+                    "total_tokens": usage.total_tokens if usage else 0,
+                },
+                "metadata": {
+                    "latency_ms": latency_ms,
+                    "finish_reason": response.choices[0].finish_reason,
+                },
+            }
+        except OpenAIError as e:
+            raise RuntimeError(f"OpenAI API error: {e}") from e

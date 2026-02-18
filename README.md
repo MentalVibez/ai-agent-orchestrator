@@ -1,147 +1,148 @@
 # AI Agent Orchestrator
 
-A multi-agent backend system that coordinates specialized LLM-powered agents to handle complex IT diagnostics and IT engineering workflows through a single HTTP API. **Now with MCP (Model Context Protocol)**: register MCP servers, define agent profiles, and run goal-based workflows that compose tools from multiple MCP servers (or fall back to legacy agents when no MCP tools are configured).
+A multi-agent backend system that coordinates specialized LLM-powered agents to handle complex IT diagnostics and engineering workflows through a single HTTP API. **Now with MCP (Model Context Protocol)**: register MCP servers, define agent profiles, and run goal-based workflows that compose tools from multiple MCP servers (or fall back to legacy agents when no MCP tools are configured).
 
-> **Production-Ready System**: This is a fully functional, production-ready AI agent orchestration system. **All core functionality is implemented** including 3 working agents (Network Diagnostics, System Monitoring, Code Review), tool system, dynamic prompts, database persistence, workflows, cost tracking, MCP client layer, and comprehensive testing. See [ADDING_AGENTS.md](ADDING_AGENTS.md) to extend with additional agents.
+> **Production-Ready System**: Fully functional with 7 active agents, 3 LLM providers (Bedrock, OpenAI, Ollama), MCP client layer, SQLite persistence, Docker deployment, and a comprehensive test suite at 70%+ coverage.
 
 ---
 
-## Quick start (step-by-step)
+## Quick Start (Docker — recommended)
 
-Follow these steps in order. If something fails, check the error message and the [Setup](#setup) section below.
+```bash
+# 1. Clone the repo
+git clone https://github.com/MentalVibez/ai-agent-orchestrator
+cd ai-agent-orchestrator
 
-| Step | What to do | Command (Windows) | Command (Linux / macOS) |
-|------|------------|-------------------|--------------------------|
-| 1 | Open a terminal in the project folder | `cd path\to\ai-agent-orchestrator` | `cd /path/to/ai-agent-orchestrator` |
-| 2 | Create a virtual environment | `python -m venv venv` | `python3 -m venv venv` |
-| 3 | Activate the virtual environment | `venv\Scripts\activate` | `source venv/bin/activate` |
-| 4 | Install dependencies | `python -m pip install -r requirements.txt` | `pip install -r requirements.txt` |
-| 5 | Copy the env template to `.env` | `copy env.template .env` | `cp env.template .env` |
-| 6 | Edit `.env` and set at least `API_KEY` and (for Bedrock) `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | Use Notepad or any editor | Use nano, vim, or any editor |
-| 7 | Start the API server | `python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` | `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` |
-| 8 | Check it works | Open in browser: **http://localhost:8000/docs** and **http://localhost:8000/api/v1/health** | Same |
+# 2. Run the interactive setup wizard
+bash scripts/setup.sh
+```
 
-- **No `.env.example`?** This project uses **`env.template`**. Copy it to **`.env`** (see step 5).
-- **Port 8000 in use?** Change `--port 8000` to another port (e.g. `--port 8080`) in step 7.
-- **Tests:** From the project root with the venv activated, run: `python -m pytest tests/ -v --tb=short`. Optional: `python -m ruff check app/ tests/` and `python -m pip_audit` for lint and security.
-- **Before pushing to GitHub:** Run the test suite and fix any failures; run `pip-audit` (or your security check) and fix critical issues. Then commit and push.
+The wizard will:
+- Ask which LLM provider to use (Bedrock / OpenAI / Ollama)
+- Collect credentials and generate a random API key
+- Write `.env` and start the Docker stack automatically
 
-## Overview
+Once running:
+- **API:** http://localhost:8000
+- **Health:** http://localhost:8000/api/v1/health
+- **Console:** http://localhost:8000/console
+- **Docs (dev only):** http://localhost:8000/docs *(only when `DEBUG=true`)*
 
-The AI Agent Orchestrator is a FastAPI-based system that enables coordination of multiple specialized AI agents for IT operations. Each agent is designed to handle specific types of tasks (network diagnostics, system monitoring, log analysis, infrastructure management) and can work independently or collaboratively through the orchestrator.
+---
 
-### Use Cases
+## Quick Start (local development)
 
-- **Chatbot Enhancement**: Integrate specialized agents into existing chatbots for IT diagnostics and troubleshooting
-- **IT Operations**: Automate network diagnostics, system monitoring, and log analysis
-- **Multi-Agent Workflows**: Coordinate multiple agents to handle complex, multi-step tasks
-- **API Service**: Provide agent orchestration as a service to other applications
+| Step | Windows | Linux / macOS |
+|------|---------|---------------|
+| 1. Create virtualenv | `python -m venv venv` | `python3 -m venv venv` |
+| 2. Activate | `venv\Scripts\activate` | `source venv/bin/activate` |
+| 3. Install deps | `pip install -r requirements.txt` | `pip install -r requirements.txt` |
+| 4. Copy env template | `copy .env.example .env` | `cp .env.example .env` |
+| 5. Edit `.env` | Set `API_KEY`, `LLM_PROVIDER`, and provider credentials | Same |
+| 6. Start | `uvicorn app.main:app --reload --port 8000` | `uvicorn app.main:app --reload --port 8000` |
+
+> Set `DATABASE_URL=sqlite:///./orchestrator.db` in `.env` for local dev (keeps the DB file in the project folder instead of `/app/data`).
+
+---
+
+## OpenDEX Platform
+
+**OpenDEX** is an independent, open-source Digital Employee Experience (DEX) platform — not affiliated with any commercial DEX vendor. It combines **osquery + Prometheus/Grafana + Ansible + this orchestrator** to deliver enterprise-grade endpoint visibility and automated remediation at zero licensing cost. See **[DEX_MVP.md](DEX_MVP.md)**.
+
+- **Osquery agent** — endpoint visibility (processes, ports, users, system info)
+- **Ansible agent** — run playbooks for automated remediation
+- **Prometheus metrics** — `GET /metrics` (auth required)
+- **Alertmanager webhook** — `POST /api/v1/webhooks/prometheus`
+- **Example workflow** — diagnose → remediate
+
+---
 
 ## Architecture
 
 ### Core Components
 
-- **Orchestrator**: Routes tasks to appropriate agents and coordinates multi-agent workflows
-- **Agent Registry**: Manages available agents and their capabilities
-- **Workflow Executor**: Executes multi-step workflows involving multiple agents
-- **LLM Manager**: Manages LLM provider selection and initialization
-- **Message Bus**: Enables agent-to-agent communication
+- **Orchestrator** — routes tasks to appropriate agents; coordinates multi-agent workflows
+- **Agent Registry** — manages all registered agents and their capabilities
+- **Workflow Executor** — executes multi-step workflows with parallel step support
+- **LLM Manager** — handles provider selection, initialization, and fallback
+- **Planner Loop** — MCP-centric goal executor: LLM chooses tools iteratively until done
+- **MCP Client Manager** — connects to stdio MCP servers, discovers tools
 
-### Agents
+### Agents (7 active)
 
-- **Network Diagnostics Agent**: Handles network connectivity, latency, routing, and DNS issues
-- **System Monitoring Agent**: Monitors CPU, memory, disk usage, and processes
-- **Code Review Agent**: Performs security analysis, code quality review, and vulnerability detection (NEW)
-- **Log Analysis Agent**: Analyzes logs, detects errors, and provides troubleshooting insights
-- **Infrastructure Agent**: Handles provisioning, configuration management, and deployment
+| Agent | ID | Capabilities |
+|-------|----|-------------|
+| Network Diagnostics | `network_diagnostics` | ping, traceroute, DNS, port checks |
+| System Monitoring | `system_monitoring` | CPU, memory, disk, processes |
+| Code Review | `code_review` | security analysis, quality review |
+| Log Analysis | `log_analysis` | log parsing, error detection, journalctl |
+| Infrastructure | `infrastructure` | systemd services, Docker containers, AWS summary |
+| Osquery | `osquery` | endpoint visibility via SQL queries |
+| Ansible | `ansible` | run validated Ansible playbooks |
 
-### LLM Providers
+### LLM Providers (3 implemented)
 
-- **AWS Bedrock** (Primary): Claude 3 Haiku - Low-cost, serverless option
-- **OpenAI**: GPT-3.5-turbo - Alternative provider
-- **Ollama**: Local/open-source models - Free, self-hosted option
+| Provider | When to use | Cost |
+|----------|-------------|------|
+| **AWS Bedrock** | Production / cloud | ~$0.001 per request (Claude Haiku) |
+| **OpenAI** | GPT-4o alternative | Pay-per-token |
+| **Ollama** | Local / self-hosted | **Free** |
 
-### MCP-Centric Runs (New)
+Set `LLM_PROVIDER=bedrock`, `openai`, or `ollama` in `.env`.
 
-- **MCP Client Manager**: Connects to multiple MCP servers (stdio) at startup, discovers tools, and routes tool calls. Configure servers in `config/mcp_servers.yaml`.
-- **Agent Profiles**: Define profiles (role prompt, allowed MCP servers) in `config/agent_profiles.yaml`. Each run uses one profile.
-- **Planner Loop**: For a run, the planner LLM repeatedly chooses the next action (call an MCP tool or FINISH with an answer). If no MCP tools are enabled for the profile, the run uses the **legacy orchestrator** (existing agents) and returns that result.
-- **Runs API**: `POST /api/v1/run` with `{ "goal": "...", "agent_profile_id": "default" }` starts a run and returns `run_id`. Poll `GET /api/v1/runs/{run_id}` for status, steps, tool calls, and final answer.
+### MCP-Centric Runs
+
+- **Agent Profiles** — defined in `config/agent_profiles.yaml` (role prompt + allowed MCP servers)
+- **Planner Loop** — for a run, the LLM picks tools iteratively until FINISH. Falls back to legacy orchestrator if no MCP tools are configured.
+- **Runs API** — `POST /api/v1/run` → returns `run_id`. Poll `GET /api/v1/runs/{run_id}` for status, steps, and final answer.
+
+---
 
 ## Setup
 
 ### Prerequisites
 
-- Python 3.9 or higher
-- pip or poetry for dependency management
-- AWS credentials (if using Bedrock)
-- OpenAI API key (if using OpenAI)
-- Ollama installed locally (if using Ollama)
-
-### Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd ai-agent-orchestrator
-```
-
-2. Create a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Configure environment variables (use the template file; do not commit `.env`):
-   - **Windows:** `copy env.template .env`
-   - **Linux / macOS:** `cp env.template .env`
-   Then edit `.env` and set at least `API_KEY` and your LLM provider keys (e.g. AWS or OpenAI).
+- Python 3.10+
+- Docker + Docker Compose (for Docker deployment)
+- Node.js 20+ in Docker image (auto-installed — needed for MCP servers using `npx`)
+- AWS credentials, OpenAI API key, or Ollama running locally
 
 ### Environment Variables
 
-Key environment variables to configure:
+Key variables (see `.env.example` for full list):
 
-- **LLM:** `LLM_PROVIDER` (bedrock, openai, ollama), `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`; or `OPENAI_API_KEY` for OpenAI
-- **Security:** `API_KEY`, `REQUIRE_API_KEY`, `AGENT_WORKSPACE_ROOT` (restrict file tools), `PROMPT_INJECTION_FILTER_ENABLED`
-- **Planner:** `PLANNER_LLM_TIMEOUT_SECONDS` (default 120; 0 = no timeout)
-- **App:** `CORS_ORIGINS` (comma-separated), `LOG_LEVEL`, `DEBUG`
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_PROVIDER` | `bedrock` | `bedrock` / `openai` / `ollama` |
+| `API_KEY` | *(required)* | Must be set — auth fails if empty with `REQUIRE_API_KEY=true` |
+| `REQUIRE_API_KEY` | `true` | Set to `false` to disable auth (dev only) |
+| `AWS_REGION` | `us-east-1` | Bedrock region |
+| `AWS_ACCESS_KEY_ID` | | Bedrock credentials |
+| `AWS_SECRET_ACCESS_KEY` | | Bedrock credentials |
+| `OPENAI_API_KEY` | | OpenAI API key |
+| `OPENAI_MODEL` | `gpt-4o` | OpenAI model |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
+| `OLLAMA_MODEL` | `llama3.2` | Ollama model name |
+| `DEBUG` | `false` | Enables Swagger UI (`/docs`) and verbose errors |
+| `DATABASE_URL` | `sqlite:////app/data/orchestrator.db` | DB path (override for local dev) |
+| `CORS_ORIGINS` | `https://donsylvester.dev,...` | Comma-separated allowed origins |
+| `WEBHOOK_SECRET` | | HMAC secret for Prometheus webhook (leave blank = unauthenticated) |
 
-## Running the Application
-
-### Development Mode
-
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Production Mode
-
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-The API will be available at:
-- **API:** http://localhost:8000
-- **Docs (Swagger):** http://localhost:8000/docs
-- **ReDoc:** http://localhost:8000/redoc
-- **Console (goal-based runs):** http://localhost:8000/console
+---
 
 ## API Endpoints
 
-### Health Check
+All endpoints require `X-API-Key: <your-key>` header (unless `REQUIRE_API_KEY=false`).
+
+### Health
 
 ```http
 GET /api/v1/health
 ```
 
-Returns the health status of the application.
+Returns `healthy` / `degraded` / `unhealthy` with agent count, DB status, and LLM status.
 
-### Orchestrate Task
+### Orchestrate (legacy)
 
 ```http
 POST /api/v1/orchestrate
@@ -149,48 +150,11 @@ Content-Type: application/json
 
 {
   "task": "Diagnose network connectivity issues",
-  "context": {
-    "hostname": "example.com",
-    "port": 443
-  }
+  "context": {"hostname": "example.com", "port": 443}
 }
 ```
 
-Submits a task to the orchestrator for execution by appropriate agents.
-
-### List Agents
-
-```http
-GET /api/v1/agents
-```
-
-Returns a list of all available agents and their capabilities.
-
-### Get Agent Details
-
-```http
-GET /api/v1/agents/{agent_id}
-```
-
-Returns detailed information about a specific agent.
-
-### Execute Workflow
-
-```http
-POST /api/v1/workflows
-Content-Type: application/json
-
-{
-  "workflow_id": "network_diagnostics_workflow",
-  "input_data": {
-    "target": "example.com"
-  }
-}
-```
-
-Executes a predefined multi-step workflow.
-
-### MCP-Centric Run (goal-based)
+### MCP Goal-Based Run (recommended)
 
 ```http
 POST /api/v1/run
@@ -198,350 +162,236 @@ Content-Type: application/json
 
 {
   "goal": "Check connectivity to example.com on port 443",
-  "agent_profile_id": "default",
-  "context": {}
+  "agent_profile_id": "default"
 }
 ```
 
-Returns `{ "run_id": "...", "status": "pending", ... }`. Then poll:
+Returns `{ "run_id": "..." }`. Then poll:
 
 ```http
 GET /api/v1/runs/{run_id}
 ```
 
-Returns run status, steps, tool calls, and `answer` when completed.
+Returns status, steps, tool calls, and `answer` when complete.
 
-- **GET /api/v1/agent-profiles** – List enabled agent profiles (id, name, description).
-- **GET /api/v1/mcp/servers** – List connected MCP servers and their exposed tools (governance/transparency).
+### Other Endpoints
 
-**Playwright (browser automation):** Use `"agent_profile_id": "browser"` for goals that need browser automation. **Fetch:** HTTP fetch is enabled; use with **Deep Research** (see below). **Deep Research profile:** Use `"agent_profile_id": "deep_research"` to combine Fetch and Playwright (fetch URLs, automate the browser, synthesize answers). Requires Node.js 18+ for MCP servers.
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/v1/agents` | List all agents |
+| `GET /api/v1/agents/{id}` | Agent details |
+| `POST /api/v1/workflows` | Execute a workflow |
+| `GET /api/v1/metrics/costs` | Cost analytics |
+| `GET /api/v1/agent-profiles` | List MCP agent profiles |
+| `GET /api/v1/mcp/servers` | List connected MCP servers |
+| `POST /api/v1/webhooks/prometheus` | Alertmanager webhook |
+| `GET /metrics` | Prometheus scrape (auth required) |
 
-**Personal Multi-Agent Console:** Open `/console` in the browser (e.g. http://localhost:8000/console) to enter a goal, pick an agent profile, start a run, and watch status, steps, and the final answer. Set the API key in the form if the server requires it.
+**Prometheus scrape config** — add `X-API-Key` header to your Prometheus job:
+```yaml
+scrape_configs:
+  - job_name: orchestrator
+    static_configs:
+      - targets: ["localhost:8000"]
+    params: {}
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/api_key
+```
 
-## 🚀 Quick Start for Chatbot Integration
-
-If you're integrating this into an existing chatbot (like donsylvester.dev), see:
-
-- **[CHATBOT_SETUP.md](CHATBOT_SETUP.md)** - Quick setup checklist
-- **[INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md)** - Detailed integration guide with code examples
-- **[examples/](examples/)** - Ready-to-use code examples for backend proxy and frontend integration
-
-## 📚 Documentation
-
-### Getting Started
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - How to contribute; run tests; add MCP servers and agent profiles
-- **[ADDING_AGENTS.md](ADDING_AGENTS.md)** - Step-by-step guide to create and register new agents
-- **[CHATBOT_SETUP.md](CHATBOT_SETUP.md)** - Quick setup checklist for chatbot integration
-- **[INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md)** - Detailed integration guide with code examples
-- **[SETUP_SUMMARY.md](SETUP_SUMMARY.md)** - Complete setup requirements list
-- **[STATUS_UPDATE.md](STATUS_UPDATE.md)** - Current implementation status and assessment
-- **[QUALITY_SUGGESTIONS.md](QUALITY_SUGGESTIONS.md)** - Backlog of quality and CI improvements
-
-### Deployment
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Production deployment guide
-- **[DEPLOYMENT_INTEGRATION.md](DEPLOYMENT_INTEGRATION.md)** - Integration with existing AWS infrastructure
-- **[EXISTING_INFRASTRUCTURE_ANALYSIS.md](EXISTING_INFRASTRUCTURE_ANALYSIS.md)** - Analysis of current AWS setup
-
-### Production Readiness
-- **[PRODUCTION_ROADMAP.md](PRODUCTION_ROADMAP.md)** - ⭐ **Start Here** - Quick reference roadmap
-- **[ENTERPRISE_READINESS.md](ENTERPRISE_READINESS.md)** - Requirements for small business to enterprise
-- **[SCALABILITY_ARCHITECTURE.md](SCALABILITY_ARCHITECTURE.md)** - Scalability patterns and architecture
-- **[PRODUCTION_READINESS.md](PRODUCTION_READINESS.md)** - Detailed production readiness review
-- **[PRODUCTION_GAPS.md](PRODUCTION_GAPS.md)** - Quick summary of missing features
-
-### Security & Infrastructure
-- **[SECURITY.md](SECURITY.md)** - Security features and best practices
-- **[AWS_INFRASTRUCTURE_REVIEW.md](AWS_INFRASTRUCTURE_REVIEW.md)** - AWS infrastructure recommendations
-- **[AWS_INFRASTRUCTURE_ANALYSIS.md](AWS_INFRASTRUCTURE_ANALYSIS.md)** - Analysis of your AWS setup
-
-### Architecture & New Features
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design
-- **[CODE_REVIEW_AGENT_ANALYSIS.md](CODE_REVIEW_AGENT_ANALYSIS.md)** - Analysis of code review agent patterns
-- **[TOOLS_AND_CODE_REVIEW_IMPLEMENTATION.md](TOOLS_AND_CODE_REVIEW_IMPLEMENTATION.md)** - Tools and code review implementation details
-- **[MONITORING.md](MONITORING.md)** - Monitoring and observability guide
-- **[DEPLOYMENT_K8S.md](DEPLOYMENT_K8S.md)** - Kubernetes deployment guide
-
-## ✅ Current Status
-
-**🟢 Production-Ready with Advanced Features**
-
-The system is **fully implemented and production-ready** with comprehensive features including tool system, code review capabilities, dynamic prompts, database persistence, workflows, cost tracking, testing, and monitoring. All core functionality is working and tested.
-
-**✅ What's Implemented and Working:**
-- ✅ **Core**: Agent Registry, Orchestrator routing, LLM Provider (Bedrock), tool system (file read, code search, dir list) with workspace sandboxing
-- ✅ **Agents**: Network Diagnostics, System Monitoring, Code Review (3 fully functional)
-- ✅ **MCP**: Client manager (stdio), configurable servers (`config/mcp_servers.yaml`), agent profiles (`config/agent_profiles.yaml`), goal-based runs API (POST /run, GET /runs/:id), Personal Console at `/console`
-- ✅ **Planner**: LLM loop with timeout and run cancellation; optional prompt-injection filter and structural hardening
-- ✅ **API**: Orchestrate, agents, workflows, cost metrics, runs (start, list, get, cancel), agent-profiles, mcp/servers, health
-- ✅ **Security**: API key auth, rate limiting, CORS, security headers, agent sandboxing, workspace root restriction, [SECURITY.md](SECURITY.md)
-- ✅ **Quality**: Ruff lint, tests (unit + integration), optional mypy and pip-audit; see [CONTRIBUTING.md](CONTRIBUTING.md) and [QUALITY_SUGGESTIONS.md](QUALITY_SUGGESTIONS.md)
-- ✅ **Database**: SQLite for execution history, agent state, runs
-- ✅ **Deployment**: Docker, CloudFormation, Kubernetes manifests, AWS guides
-
-**⚠️ Optional/Advanced Features:**
-- ⚠️ Additional agents (Log Analysis, Infrastructure - available as templates)
-- ⚠️ Additional LLM providers (OpenAI, Ollama - Bedrock is fully working)
-- ⚠️ Advanced monitoring dashboards (Prometheus metrics available)
-- ⚠️ PostgreSQL support (SQLite works for MVP)
-
-**📊 Progress:**
-- **Core Functionality**: ✅ 100% Complete
-- **Production Features**: ✅ 100% Complete  
-- **API Endpoints**: ✅ 100% Complete (all endpoints working)
-- **Agents**: ✅ 3/5 implemented (Network Diagnostics, System Monitoring, Code Review)
-- **Tool System**: ✅ 100% Complete (4 core tools implemented)
-- **Dynamic Prompts**: ✅ 100% Complete
-- **Workflows**: ✅ 100% Complete
-- **Database**: ✅ 100% Complete
-- **Testing**: ✅ 100% Complete
-- **LLM Providers**: ✅ 1/3 implemented (Bedrock - others optional)
-
-**🎯 Ready For:**
-- ✅ Small business production use
-- ✅ Chatbot integration
-- ✅ IT diagnostics and troubleshooting
-- ✅ Code review and security analysis
-- ✅ Multi-step workflow automation
-- ✅ Extending with custom agents
-
-**📝 To Extend:**
-- See [ADDING_AGENTS.md](ADDING_AGENTS.md) to add more agents
-- See [PRODUCTION_REMAINING.md](PRODUCTION_REMAINING.md) for optional enhancements
+---
 
 ## Usage Examples
 
-### Example 1: Code Review (Security Analysis)
+### Goal-based run (MCP)
 
 ```python
-import requests
+import requests, time
 
-# Review code for security vulnerabilities
-response = requests.post(
-    "http://localhost:8000/api/v1/orchestrate",
-    headers={"X-API-Key": "your-api-key"},
-    json={
-        "task": "Review code for security vulnerabilities",
-        "context": {
-            "directory": "app",
-            "focus_areas": ["security", "quality"]
-        }
-    }
-)
-
-result = response.json()
-print(f"Security Issues Found: {result['results'][0]['output']['issues_found']}")
-```
-
-### Example 2: MCP goal-based run (recommended)
-
-```python
-import requests
-import time
-
-# Start a run
 r = requests.post(
     "http://localhost:8000/api/v1/run",
     headers={"X-API-Key": "your-api-key"},
     json={"goal": "Check connectivity to example.com on port 443", "agent_profile_id": "default"},
 )
-run = r.json()
-run_id = run["run_id"]
+run_id = r.json()["run_id"]
 
-# Poll until completed
-while run["status"] not in ("completed", "failed", "cancelled"):
+while True:
+    run = requests.get(
+        f"http://localhost:8000/api/v1/runs/{run_id}",
+        headers={"X-API-Key": "your-api-key"},
+    ).json()
+    if run["status"] in ("completed", "failed", "cancelled"):
+        break
     time.sleep(1)
-    r = requests.get(f"http://localhost:8000/api/v1/runs/{run_id}", headers={"X-API-Key": "your-api-key"})
-    run = r.json()
-print(run.get("answer", run))
+
+print(run.get("answer"))
 ```
 
-### Example 3: Network Diagnostics (legacy orchestrate)
+### Specific agent (osquery)
 
 ```python
-import requests
-
-response = requests.post(
+requests.post(
     "http://localhost:8000/api/v1/orchestrate",
+    headers={"X-API-Key": "your-api-key"},
     json={
-        "task": "Check connectivity to example.com on port 443",
-        "context": {
-            "hostname": "example.com",
-            "port": 443
-        }
-    }
-)
-
-result = response.json()
-print(result)
-```
-
-### Example 4: System Monitoring
-
-```python
-response = requests.post(
-    "http://localhost:8000/api/v1/orchestrate",
-    json={
-        "task": "Monitor CPU and memory usage",
-        "context": {
-            "duration": 60,
-            "interval": 5
-        }
-    }
+        "task": "Show running processes",
+        "agent_ids": ["osquery"],
+        "context": {"query_key": "processes"},
+    },
 )
 ```
 
-### Example 5: Log Analysis
+### Run an Ansible playbook
 
 ```python
-response = requests.post(
+requests.post(
     "http://localhost:8000/api/v1/orchestrate",
+    headers={"X-API-Key": "your-api-key"},
     json={
-        "task": "Analyze error logs and identify root cause",
+        "task": "Restart nginx service",
+        "agent_ids": ["ansible"],
         "context": {
-            "log_file": "/var/log/app/error.log",
-            "time_range": "last_24_hours"
-        }
-    }
+            "playbook": "restart_service.yml",
+            "extra_vars": {"service_name": "nginx"},
+        },
+    },
 )
 ```
+
+---
 
 ## Project Structure
 
 ```
 ai-agent-orchestrator/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py                 # FastAPI application entry point
-│   ├── api/
-│   │   └── v1/
-│   │       └── routes/         # API route handlers
+│   ├── main.py                   # FastAPI entry point
+│   ├── api/v1/routes/            # Route handlers
 │   ├── core/
-│   │   ├── config.py           # Configuration management
-│   │   ├── orchestrator.py     # Orchestration engine
-│   │   ├── agent_registry.py   # Agent registry
-│   │   ├── run_store.py        # Run persistence (MCP runs)
-│   │   ├── prompt_injection.py # Optional input filter
-│   │   ├── workflow_executor.py # Workflow executor
-│   │   └── messaging.py        # Message bus
-│   ├── planner/
-│   │   └── loop.py             # MCP planner loop (goal → tool calls or finish)
-│   ├── mcp/
-│   │   ├── config_loader.py   # Load MCP servers & agent profiles
-│   │   └── client_manager.py   # MCP client (stdio, tool discovery)
-│   ├── agents/
-│   │   ├── base.py             # Base agent class
-│   │   ├── network_diagnostics.py
-│   │   ├── system_monitoring.py
-│   │   ├── log_analysis.py
-│   │   └── infrastructure.py
-│   ├── llm/
-│   │   ├── base.py             # LLM provider interface
-│   │   ├── bedrock.py          # AWS Bedrock provider
-│   │   ├── openai.py           # OpenAI provider
-│   │   ├── ollama.py           # Ollama provider
-│   │   └── manager.py          # LLM manager
-│   ├── models/
-│   │   ├── agent.py            # Agent data models
-│   │   ├── run.py              # Run request/response models
-│   │   ├── workflow.py         # Workflow data models
-│   │   └── request.py          # API request/response models
-│   └── workflows/
-│       └── examples/           # Example workflow definitions
+│   │   ├── auth.py               # API key auth (timing-safe)
+│   │   ├── config.py             # Settings (pydantic-settings)
+│   │   ├── orchestrator.py       # Task routing
+│   │   ├── services.py           # Dependency injection / service container
+│   │   ├── workflow_executor.py  # Parallel workflow execution
+│   │   └── prompt_injection.py   # Input sanitization
+│   ├── planner/loop.py           # MCP planner loop
+│   ├── mcp/                      # MCP client layer
+│   ├── agents/                   # 7 agent implementations
+│   ├── llm/                      # Bedrock, OpenAI, Ollama providers
+│   ├── db/                       # SQLAlchemy models + migrations
+│   └── models/                   # Pydantic request/response models
 ├── config/
-│   ├── agents.yaml             # Agent configurations
-│   ├── llm.yaml                # LLM provider configurations
-│   ├── mcp_servers.yaml        # MCP server definitions (stdio)
-│   └── agent_profiles.yaml     # Agent profiles (role prompt, allowed MCP servers)
-├── requirements.txt
-├── env.template          # Copy to .env and configure (do not commit .env)
-├── .gitignore
-└── README.md
+│   ├── agents.yaml
+│   ├── mcp_servers.yaml          # MCP server definitions
+│   └── agent_profiles.yaml       # Agent profiles (role + allowed tools)
+├── playbooks/                    # Ansible playbooks
+├── scripts/
+│   └── setup.sh                  # Interactive setup wizard
+├── tests/
+│   ├── unit/                     # 70%+ coverage
+│   └── integration/
+├── .env.example                  # Environment template
+├── Dockerfile                    # Node.js 20 + Python 3.11
+├── docker-compose.yml            # With named volume for SQLite persistence
+└── alembic/                      # DB migrations
 ```
 
-## Development
+---
 
-- **Contributing:** See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, running tests (`pytest tests/`), adding MCP servers and agent profiles, and optional lint/type check (Ruff, mypy).
-- **Quality backlog:** See [QUALITY_SUGGESTIONS.md](QUALITY_SUGGESTIONS.md) for improvement ideas.
+## Security
 
-### Implementing Agents
+This project has undergone a security audit. Key measures in place:
 
-All agents inherit from `BaseAgent` and must implement the `execute` method:
+- **API key auth** — timing-safe comparison (`hmac.compare_digest`); server refuses to start if `REQUIRE_API_KEY=true` but `API_KEY` is not set
+- **Rate limiting** — `slowapi` on all endpoints including `/metrics`
+- **No shell injection** — all subprocess calls use argument lists, never `shell=True`
+- **Input validation** — hostname, service name, playbook name, SQL keyword blocklist all validated via strict regex
+- **No exception leakage** — raw exception messages never exposed in HTTP responses
+- **Security headers** — `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, HSTS (HTTPS only), CSP
+- **CORS** — narrowed to specific methods (`GET`, `POST`, `DELETE`) and headers (`X-API-Key`, `Content-Type`, `Accept`)
+- **Swagger UI** — disabled in production (`DEBUG=false`)
+- **Docker** — non-root `appuser` (UID 1000)
 
-```python
-from app.agents.base import BaseAgent
-from app.models.agent import AgentResult
+See [SECURITY.md](SECURITY.md) for full details.
 
-class MyAgent(BaseAgent):
-    async def execute(self, task: str, context: Optional[Dict] = None) -> AgentResult:
-        # Implement agent logic here
-        result = await self._generate_response(prompt)
-        return self._format_result(success=True, output=result)
-```
-
-### Implementing LLM Providers
-
-All LLM providers inherit from `LLMProvider` and must implement:
-
-- `generate()`: Generate text response
-- `stream()`: Stream text response
-- `generate_with_metadata()`: Generate response with usage metadata
-
-### Adding Workflows
-
-Workflows are defined as YAML or JSON files in the `app/workflows/` directory. Each workflow consists of multiple steps that can be executed by different agents.
-
-## Configuration
-
-### Agent Configuration
-
-Edit `config/agents.yaml` to configure agent capabilities and settings.
-
-### LLM Configuration
-
-Edit `config/llm.yaml` to configure LLM provider settings and defaults.
+---
 
 ## Testing
 
 ```bash
-# Run all tests (from project root with venv activated)
-python -m pytest tests/ -v --tb=short
+# Run full test suite with coverage
+python -m pytest tests/ -v --tb=short --cov=app --cov-report=term-missing
 
-# Optional: lint and security audit (as in CI)
+# Lint
 python -m ruff check app/ tests/
-python -m pip_audit
+
+# Security audit of dependencies
+pip install pip-audit && pip-audit
 ```
 
-## Pushing to GitHub
+---
 
-Before you push, make sure:
+## Ultra-Low Cost Deployment
 
-1. **Tests pass:** Run `python -m pytest tests/ -v --tb=short` (fix any failures).
-2. **Security audit:** Run `python -m pip install pip-audit` then `python -m pip_audit` and address any critical vulnerabilities.
-3. **No secrets in repo:** Ensure `.env` is in `.gitignore` and never commit API keys or passwords.
-4. Then: `git add .` → `git commit -m "Your message"` → `git push origin main` (or your branch).
+| Component | Cost |
+|-----------|------|
+| LLM — Ollama + llama3.2 (local) | **$0** |
+| LLM — AWS Bedrock Claude Haiku | ~$0.001/request |
+| osquery + Prometheus + Grafana + Ansible | **$0** |
+| SQLite (built-in) | **$0** |
+| Self-hosted (8 GB RAM PC) | **$0** |
+| Cloud VPS (Hetzner CX22) | ~$5–6/month |
+
+```bash
+# Zero-cost local setup with Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.2
+echo "LLM_PROVIDER=ollama" >> .env
+echo "OLLAMA_BASE_URL=http://localhost:11434" >> .env
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+---
+
+## Current Status
+
+**All core functionality implemented and tested.**
+
+| Area | Status |
+|------|--------|
+| Agents | ✅ 7/7 (Network, System, Code Review, Log Analysis, Infrastructure, Osquery, Ansible) |
+| LLM Providers | ✅ 3/3 (Bedrock, OpenAI, Ollama) |
+| MCP client + planner | ✅ Complete |
+| Runs API | ✅ Complete |
+| Workflows | ✅ Complete |
+| Security (auth, rate limit, injection) | ✅ Audited and hardened |
+| Docker + persistence | ✅ Named volume for SQLite |
+| Test coverage | ✅ 70%+ |
+
+---
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Make your changes
+3. Run `pytest` and `ruff check` — all checks must pass
 4. Submit a pull request
+
+See [ADDING_AGENTS.md](ADDING_AGENTS.md) to add new agents.
+
+---
 
 ## License
 
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+**Apache License 2.0** — see [LICENSE](LICENSE).
 
-### What This Means
+- Free for commercial and personal use
+- Modify and distribute freely
+- Attribution required; document significant changes
+- Explicit patent grant (stronger than MIT)
 
-- ✅ **Free to use** - Commercial and personal use allowed
-- ✅ **Modify freely** - Adapt to your needs
-- ✅ **Distribute** - Share your modifications
-- ✅ **Private use** - Use in proprietary projects
-- ⚠️ **Attribution required** - Include the original license and copyright notice
-
-The MIT License is one of the most permissive open-source licenses, making this template ideal for both learning and commercial use.
+---
 
 ## Support
 
-For issues and questions, please open an issue on the repository.
-
+Open an issue on the repository for bugs, questions, or feature requests.

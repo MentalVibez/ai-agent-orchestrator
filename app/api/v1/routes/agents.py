@@ -1,6 +1,10 @@
 """API routes for agent management."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+
+logger = logging.getLogger(__name__)
 
 from app.core.agent_registry import AgentRegistry
 from app.core.auth import verify_api_key
@@ -54,8 +58,9 @@ async def list_agents(
             for agent in agents
         ]
         return AgentsListResponse(agents=agent_infos, count=len(agent_infos))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list agents: {str(e)}")
+    except Exception:
+        logger.exception("Failed to list agents")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/agents/{agent_id}", response_model=AgentDetailResponse)
@@ -95,5 +100,6 @@ async def get_agent(
         return AgentDetailResponse(agent=agent_info)
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get agent: {str(e)}")
+    except Exception:
+        logger.exception("Failed to get agent details")
+        raise HTTPException(status_code=500, detail="Internal server error")

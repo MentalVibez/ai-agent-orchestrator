@@ -1,5 +1,7 @@
 """Authentication and authorization middleware."""
 
+import hmac
+
 from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
@@ -22,18 +24,24 @@ async def verify_api_key(api_key: str = Security(API_KEY_HEADER)) -> str:
     Raises:
         HTTPException: If API key is missing or invalid
     """
-    # Check if API key is required
     require_key = getattr(settings, "require_api_key", True)
-
-    # Get API key from environment variable
     expected_api_key = getattr(settings, "api_key", None)
 
-    # If API key is not required or not configured, allow access
-    if not require_key or not expected_api_key:
+    # If auth is disabled via config, allow all traffic
+    if not require_key:
         return api_key or "no-key-required"
 
-    # Verify the API key
-    if not api_key or api_key != expected_api_key:
+    # When auth is required but no key is configured, deny all traffic.
+    # This prevents silent open-door deployments where REQUIRE_API_KEY=true
+    # but API_KEY was never set.
+    if not expected_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="API key authentication is enabled but no API_KEY is configured on the server.",
+        )
+
+    # Constant-time comparison to prevent timing oracle attacks
+    if not api_key or not hmac.compare_digest(api_key, expected_api_key):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing API key. Please provide a valid X-API-Key header.",

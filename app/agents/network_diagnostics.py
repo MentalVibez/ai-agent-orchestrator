@@ -5,7 +5,7 @@ import logging
 import re
 import socket
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from app.agents.base import BaseAgent
 from app.llm.base import LLMProvider

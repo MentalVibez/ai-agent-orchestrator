@@ -4,8 +4,6 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-logger = logging.getLogger(__name__)
-
 from app.core.auth import verify_api_key
 from app.core.config import settings
 from app.core.orchestrator import Orchestrator
@@ -19,6 +17,8 @@ from app.models.request import (
     WorkflowExecuteRequest,
     WorkflowExecuteResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["orchestrator"])
 

@@ -4,8 +4,6 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-logger = logging.getLogger(__name__)
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.core.auth import verify_api_key
@@ -13,6 +11,8 @@ from app.core.config import settings
 from app.core.cost_tracker import get_cost_tracker
 from app.core.rate_limit import limiter
 from app.models.metrics import CostMetrics, CostMetricsResponse, CostRecordResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["metrics"])
 

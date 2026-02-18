@@ -182,7 +182,6 @@ class TestGetAwsSummary:
         assert result.get("available") is False or "error" in result
 
     async def test_boto3_available(self):
-        import boto3
         from botocore.exceptions import NoCredentialsError
 
         mock_ec2 = MagicMock()

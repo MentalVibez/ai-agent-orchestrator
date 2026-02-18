@@ -29,14 +29,14 @@ The following **public identifiers** are present in documentation:
 
 #### 3. **Domain Names** (No Sensitivity)
 - **Locations**: Multiple files
-- **Values**: `donsylvester.dev`, `api.donsylvester.dev`
+- **Values**: `yourdomain.com`, `api.yourdomain.com`
 - **Risk**: None - These are public domain names
 - **Impact**: None - Public information
 - **Recommendation**: OK to keep
 
 #### 4. **S3 Bucket Name** (Low Sensitivity)
 - **Location**: `AWS_INFRASTRUCTURE_ANALYSIS.md`
-- **Value**: `donsylvester.dev`
+- **Value**: `yourdomain.com`
 - **Risk**: Low - If it's a public website bucket, this is expected
 - **Impact**: Minimal
 - **Recommendation**: OK to keep if it's a public website bucket

@@ -36,8 +36,8 @@
 ## 📋 What's Public (Safe)
 
 ### Domain Names
-- `donsylvester.dev` - Public domain (expected)
-- `api.donsylvester.dev` - Public subdomain (expected)
+- `yourdomain.com` - Public domain (expected)
+- `api.yourdomain.com` - Public subdomain (expected)
 
 ### GitHub Information
 - `MentalVibez` - Public GitHub username (expected)

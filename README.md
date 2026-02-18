@@ -47,7 +47,7 @@ Once running:
 
 ## OpenDEX Platform
 
-**OpenDEX** is an independent, open-source Digital Employee Experience (DEX) platform — not affiliated with any commercial DEX vendor. It combines **osquery + Prometheus/Grafana + Ansible + this orchestrator** to deliver enterprise-grade endpoint visibility and automated remediation at zero licensing cost. See **[DEX_MVP.md](DEX_MVP.md)**.
+**OpenDEX** is an independent, open-source Digital Employee Experience (DEX) platform — not affiliated with any commercial DEX vendor. It combines **osquery + Prometheus/Grafana + Ansible + this orchestrator** to deliver enterprise-grade endpoint visibility and automated remediation at zero licensing cost. See **[DEX_MVP.md](DEX_MVP.md)**. To run the orchestrator with Prometheus and Grafana in one go: **[OpenDEX_QUICKSTART.md](OpenDEX_QUICKSTART.md)**.
 
 - **Osquery agent** — endpoint visibility (processes, ports, users, system info)
 - **Ansible agent** — run playbooks for automated remediation
@@ -94,7 +94,13 @@ Set `LLM_PROVIDER=bedrock`, `openai`, or `ollama` in `.env`.
 
 - **Agent Profiles** — defined in `config/agent_profiles.yaml` (role prompt + allowed MCP servers)
 - **Planner Loop** — for a run, the LLM picks tools iteratively until FINISH. Falls back to legacy orchestrator if no MCP tools are configured.
-- **Runs API** — `POST /api/v1/run` → returns `run_id`. Poll `GET /api/v1/runs/{run_id}` for status, steps, and final answer.
+- **Runs API** — `POST /api/v1/run` → returns `run_id`. Poll `GET /api/v1/runs/{run_id}` for status, steps, and final answer; or stream progress via `GET /api/v1/runs/{run_id}/stream` (SSE).
+
+See **[docs/ORCHESTRATION.md](docs/ORCHESTRATION.md)** for when to use `POST /run` vs `POST /orchestrate`, when the planner falls back to legacy agents, and what `agent_profile_id` controls.
+
+**Run queue (optional):** Set `RUN_QUEUE_URL=redis://localhost:6379` to enqueue runs instead of running the planner in-process. Then start a worker (same env, e.g. `DATABASE_URL`, `LLM_PROVIDER`) with: `RUN_QUEUE_URL=redis://localhost:6379 arq app.worker.WorkerSettings`. Requires `pip install arq`. SSE (`GET /runs/{id}/stream`) still works because events are stored in the DB.
+
+**Human-in-the-loop (HITL):** In `config/agent_profiles.yaml`, set `approval_required_tools: [tool_name, ...]` on a profile. When the planner is about to run one of those tools, the run status becomes `awaiting_approval` and the tool is not executed until approved. `GET /api/v1/runs/{run_id}` returns `pending_approval: { server_id, tool_name, arguments, step_index }`. Send `POST /api/v1/runs/{run_id}/approve` with body `{"approved": true}` (or `{"approved": false}` to reject), and optionally `modified_arguments: {...}` to override arguments when approving. After approval, the tool runs and the planner resumes.
 
 ---
 
@@ -124,9 +130,19 @@ Key variables (see `.env.example` for full list):
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `llama3.2` | Ollama model name |
 | `DEBUG` | `false` | Enables Swagger UI (`/docs`) and verbose errors |
-| `DATABASE_URL` | `sqlite:////app/data/orchestrator.db` | DB path (override for local dev) |
-| `CORS_ORIGINS` | `https://donsylvester.dev,...` | Comma-separated allowed origins |
+| `DATABASE_URL` | `sqlite:////app/data/orchestrator.db` | SQLite (default) or PostgreSQL URL; for multi-instance/high concurrency use PostgreSQL |
+| `CORS_ORIGINS` | `https://yourdomain.com,...` | Comma-separated allowed origins |
 | `WEBHOOK_SECRET` | | HMAC secret for Prometheus webhook (leave blank = unauthenticated) |
+| `USE_LLM_ROUTING` | `false` | If `true`, `POST /orchestrate` uses LLM to pick agent; else keyword-based |
+| `LLM_ROUTING_TIMEOUT_SECONDS` | `10` | Timeout for LLM routing call (fallback to keyword on timeout/failure) |
+| `RUN_QUEUE_URL` | *(empty)* | When set (e.g. `redis://localhost:6379`), runs are enqueued; start worker with `arq app.worker.WorkerSettings` |
+| `OTEL_ENABLED` | `false` | When `true`, trace runs and planner steps/tool calls via OpenTelemetry (OTLP) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | *(empty)* | OTLP endpoint for traces (e.g. `http://localhost:4318/v1/traces`). Empty = SDK default |
+
+### Database (SQLite and PostgreSQL)
+
+- **SQLite** (default): single-file DB; fine for local dev and single-instance. Set `DATABASE_URL=sqlite:///./orchestrator.db` for a file in the project folder. The app creates tables on startup if they don't exist (`init_db()`).
+- **PostgreSQL**: supported for production and multi-instance (e.g. with run-queue workers). Set `DATABASE_URL=postgresql://user:pass@host:5432/dbname`. Create tables with **Alembic**: run `alembic upgrade head` before starting the app (and workers). Migrations live in `alembic/versions/`.
 
 ---
 
@@ -174,10 +190,20 @@ GET /api/v1/runs/{run_id}
 
 Returns status, steps, tool calls, and `answer` when complete.
 
+**Stream run progress (SSE)**
+
+```http
+GET /api/v1/runs/{run_id}/stream
+```
+
+Server-Sent Events stream: `status`, `step`, `answer`, and `end` when the run finishes. If the run was started with `stream_tokens: true` in the body of `POST /run`, event type `token` carries LLM output chunks. Best-effort; use `GET /api/v1/runs/{run_id}` for authoritative final state.
+
 ### Other Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
+| `GET /api/v1/runs/{run_id}/stream` | SSE stream of run progress (status, step, answer) |
+| `POST /api/v1/runs/{run_id}/approve` | HITL: approve or reject pending tool call (body: `approved`, optional `modified_arguments`) |
 | `GET /api/v1/agents` | List all agents |
 | `GET /api/v1/agents/{id}` | Agent details |
 | `POST /api/v1/workflows` | Execute a workflow |
@@ -377,7 +403,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 3. Run `pytest` and `ruff check` — all checks must pass
 4. Submit a pull request
 
-See [ADDING_AGENTS.md](ADDING_AGENTS.md) to add new agents.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines (including privacy: do not commit paths, usernames, or secrets). See [ADDING_AGENTS.md](ADDING_AGENTS.md) to add new agents.
 
 ---
 

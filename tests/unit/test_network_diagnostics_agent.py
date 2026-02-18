@@ -40,7 +40,7 @@ class TestNetworkDiagnosticsAgent:
         result = await agent.execute("Check connectivity", context=context)
 
         assert result.success is True
-        assert "context_used" in result.output
+        assert "host" in result.output
 
     @pytest.mark.asyncio
     async def test_execute_handles_errors(self, agent: NetworkDiagnosticsAgent):

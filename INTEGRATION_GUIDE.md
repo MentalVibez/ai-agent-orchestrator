@@ -1,6 +1,6 @@
-# Integration Guide for donsylvester.dev Chatbot
+# Integration Guide for yourdomain.com Chatbot
 
-This guide explains how to integrate the AI Agent Orchestrator into your donsylvester.dev chatbot to enhance its capabilities with specialized agents.
+This guide explains how to integrate the AI Agent Orchestrator into your yourdomain.com chatbot to enhance its capabilities with specialized agents.
 
 ## 🎯 Use Case: Chatbot Enhancement
 
@@ -14,14 +14,14 @@ Your chatbot can leverage the orchestrator to:
 
 ```
 ┌─────────────────────────────────────────┐
-│   donsylvester.dev Chatbot (Frontend)   │
+│   yourdomain.com Chatbot (Frontend)   │
 │   - User interacts with chatbot          │
 │   - Detects when to use orchestrator     │
 └──────────────┬───────────────────────────┘
                │
                ▼
 ┌─────────────────────────────────────────┐
-│   Your Backend (donsylvester.dev/api)    │
+│   Your Backend (yourdomain.com/api)    │
 │   - Chatbot logic                        │
 │   - Routes to orchestrator when needed   │
 │   - Stores API key securely              │
@@ -29,7 +29,7 @@ Your chatbot can leverage the orchestrator to:
                │ HTTPS + API Key
                ▼
 ┌─────────────────────────────────────────┐
-│   Orchestrator API (api.donsylvester.dev)│
+│   Orchestrator API (api.yourdomain.com)│
 │   - Specialized agent coordination       │
 │   - Returns structured results           │
 └─────────────────────────────────────────┘
@@ -38,7 +38,7 @@ Your chatbot can leverage the orchestrator to:
 ## 📋 Setup Checklist
 
 ### 1. **Deploy the Orchestrator API**
-   - [ ] Set up subdomain: `api.donsylvester.dev`
+   - [ ] Set up subdomain: `api.yourdomain.com`
    - [ ] Configure SSL certificate
    - [ ] Deploy using Docker or direct Python
    - [ ] Set environment variables (see below)
@@ -82,7 +82,7 @@ nano .env
 API_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 
 # Allow your domain
-CORS_ORIGINS=https://donsylvester.dev,https://www.donsylvester.dev
+CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 
 # Your AWS credentials for Bedrock
 AWS_ACCESS_KEY_ID=your-key
@@ -99,7 +99,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 
-const ORCHESTRATOR_API_URL = process.env.ORCHESTRATOR_API_URL || 'https://api.donsylvester.dev';
+const ORCHESTRATOR_API_URL = process.env.ORCHESTRATOR_API_URL || 'https://api.yourdomain.com';
 const ORCHESTRATOR_API_KEY = process.env.ORCHESTRATOR_API_KEY; // Set in your backend .env
 
 // Proxy endpoint for chatbot to use
@@ -176,7 +176,7 @@ import os
 
 orchestrator_bp = Blueprint('orchestrator', __name__)
 
-ORCHESTRATOR_API_URL = os.getenv('ORCHESTRATOR_API_URL', 'https://api.donsylvester.dev')
+ORCHESTRATOR_API_URL = os.getenv('ORCHESTRATOR_API_URL', 'https://api.yourdomain.com')
 ORCHESTRATOR_API_KEY = os.getenv('ORCHESTRATOR_API_KEY')
 
 @orchestrator_bp.route('/chatbot/orchestrate', methods=['POST'])
@@ -427,7 +427,7 @@ class EnhancedChatbot {
 ### 2. **Environment Variables for Backend**
 ```bash
 # Your backend .env file
-ORCHESTRATOR_API_URL=https://api.donsylvester.dev
+ORCHESTRATOR_API_URL=https://api.yourdomain.com
 ORCHESTRATOR_API_KEY=your-generated-api-key-here
 ```
 
@@ -492,7 +492,7 @@ curl -X POST http://localhost:3000/api/chatbot/orchestrate \
 
 ### Test Orchestrator Directly (for debugging)
 ```bash
-curl -X POST https://api.donsylvester.dev/api/v1/orchestrate \
+curl -X POST https://api.yourdomain.com/api/v1/orchestrate \
   -H "X-API-Key: your-api-key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -504,7 +504,7 @@ curl -X POST https://api.donsylvester.dev/api/v1/orchestrate \
 ## 🔄 Deployment Workflow
 
 1. **Deploy Orchestrator API** (once)
-   - Set up on `api.donsylvester.dev`
+   - Set up on `api.yourdomain.com`
    - Configure environment variables
    - Test endpoints
 
@@ -530,7 +530,7 @@ curl -X POST https://api.donsylvester.dev/api/v1/orchestrate \
 ## 🆘 Troubleshooting
 
 ### Orchestrator not responding
-- Check API is running: `curl https://api.donsylvester.dev/api/v1/health`
+- Check API is running: `curl https://api.yourdomain.com/api/v1/health`
 - Verify API key in backend environment variables
 - Check CORS settings
 

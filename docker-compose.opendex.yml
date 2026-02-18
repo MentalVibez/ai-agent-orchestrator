@@ -1,0 +1,79 @@
+# OpenDEX stack: AI Agent Orchestrator + Prometheus + Grafana
+# Run from repo root: docker-compose -f docker-compose.opendex.yml up -d
+# See OpenDEX_QUICKSTART.md for usage.
+
+version: "3.8"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-agent-orchestrator:latest
+    container_name: ai-agent-orchestrator
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+    volumes:
+      - ./config:/app/config:ro
+      - orchestrator-data:/app/data
+    networks:
+      - opendex-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: opendex-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./opendex/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    networks:
+      - opendex-network
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: opendex-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_HTTP_PORT=3000
+      - GF_DATASOURCES_DEFAULT_NAME=Prometheus
+      - GF_DATASOURCES_DEFAULT_TYPE=prometheus
+      - GF_DATASOURCES_DEFAULT_URL=http://prometheus:9090
+      - GF_DATASOURCES_DEFAULT_ACCESS=proxy
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - opendex-network
+    depends_on:
+      - prometheus
+
+volumes:
+  orchestrator-data:
+  grafana-data:
+
+networks:
+  opendex-network:
+    driver: bridge

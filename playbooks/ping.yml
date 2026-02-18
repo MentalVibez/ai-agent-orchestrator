@@ -1,0 +1,9 @@
+# Minimal playbook for testing Ansible agent (no service changes).
+# Usage: workflow or orchestrate with context playbook=ping.yml
+---
+- name: DEX test - ping hosts
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Ping
+      ansible.builtin.ping:

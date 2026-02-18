@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
         # Initialize MCP client manager (connects to enabled MCP servers from config)
         try:
             from app.mcp.client_manager import get_mcp_client_manager
+            from app.mcp.config_loader import get_agent_profile, get_enabled_mcp_servers
 
             mcp_manager = get_mcp_client_manager()
             mcp_connected = await mcp_manager.initialize()
@@ -68,6 +69,19 @@ async def lifespan(app: FastAPI):
                 logger.info(
                     "MCP client manager connected to %d server(s)", len(mcp_manager._sessions)
                 )
+                # Warn if default profile has no MCP servers listed (runs will use legacy orchestrator only)
+                default_profile = get_agent_profile("default")
+                enabled_servers = get_enabled_mcp_servers()
+                if (
+                    default_profile is not None
+                    and enabled_servers
+                    and not default_profile.get("allowed_mcp_servers")
+                ):
+                    logger.warning(
+                        "Default agent profile has allowed_mcp_servers: []. "
+                        "POST /run will use legacy agents only. Add MCP server IDs to "
+                        "config/agent_profiles.yaml (default.allowed_mcp_servers) to use MCP tools."
+                    )
         except Exception as e:
             logger.warning("MCP client manager init skipped or failed: %s", e)
 
@@ -93,6 +107,14 @@ async def lifespan(app: FastAPI):
         # Shutdown service container
         container = get_service_container()
         container.shutdown()
+
+        # Close run queue Redis pool if used
+        try:
+            from app.core.run_queue import close_pool
+
+            await close_pool()
+        except Exception as e:
+            logger.warning("Run queue pool close failed: %s", e)
 
         logger.info("Shutdown complete")
     except Exception as e:

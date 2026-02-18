@@ -1,4 +1,4 @@
-# Deployment Guide for donsylvester.dev
+# Deployment Guide
 
 This guide explains how to securely deploy the AI Agent Orchestrator API to your website without exposing sensitive information.
 
@@ -8,14 +8,14 @@ The recommended deployment architecture separates concerns:
 
 ```
 ┌─────────────────────────────────────┐
-│   Frontend (donsylvester.dev)       │
+│   Frontend (yourdomain.com)       │
 │   - Your website                    │
 │   - Makes API calls to backend      │
 └──────────────┬──────────────────────┘
                │ HTTPS + API Key
                ▼
 ┌─────────────────────────────────────┐
-│   Backend API (api.donsylvester.dev)│
+│   Backend API (api.yourdomain.com)│
 │   - FastAPI application              │
 │   - Protected by API key             │
 │   - Rate limited                     │
@@ -84,12 +84,12 @@ docker-compose down
 
 #### Step 3: Set Up Reverse Proxy (Nginx)
 
-Create an Nginx configuration file (e.g., `/etc/nginx/sites-available/api.donsylvester.dev`):
+Create an Nginx configuration file (e.g., `/etc/nginx/sites-available/api.yourdomain.com`):
 
 ```nginx
 server {
     listen 80;
-    server_name api.donsylvester.dev;
+    server_name api.yourdomain.com;
 
     # Redirect HTTP to HTTPS
     return 301 https://$server_name$request_uri;
@@ -97,11 +97,11 @@ server {
 
 server {
     listen 443 ssl http2;
-    server_name api.donsylvester.dev;
+    server_name api.yourdomain.com;
 
     # SSL Configuration (Let's Encrypt)
-    ssl_certificate /etc/letsencrypt/live/api.donsylvester.dev/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.donsylvester.dev/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/api.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.yourdomain.com/privkey.pem;
     
     # SSL Security Settings
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -132,7 +132,7 @@ server {
 
 Enable the site:
 ```bash
-sudo ln -s /etc/nginx/sites-available/api.donsylvester.dev /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/api.yourdomain.com /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -145,7 +145,7 @@ sudo apt-get update
 sudo apt-get install certbot python3-certbot-nginx
 
 # Obtain certificate
-sudo certbot --nginx -d api.donsylvester.dev
+sudo certbot --nginx -d api.yourdomain.com
 ```
 
 ### Option 2: Direct Python Deployment
@@ -210,7 +210,7 @@ In your frontend code (JavaScript/TypeScript), include the API key in the reques
 
 ```javascript
 // Example: Fetch API
-const response = await fetch('https://api.donsylvester.dev/api/v1/orchestrate', {
+const response = await fetch('https://api.yourdomain.com/api/v1/orchestrate', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -252,14 +252,14 @@ Instead, use one of these approaches:
 
 1. **Health Check**:
 ```bash
-curl https://api.donsylvester.dev/api/v1/health
+curl https://api.yourdomain.com/api/v1/health
 ```
 
 2. **Test with API Key**:
 ```bash
 curl -H "X-API-Key: your-api-key" \
      -H "Content-Type: application/json" \
-     https://api.donsylvester.dev/api/v1/agents
+     https://api.yourdomain.com/api/v1/agents
 ```
 
 3. **Test Rate Limiting**:
@@ -267,7 +267,7 @@ curl -H "X-API-Key: your-api-key" \
 # Make multiple rapid requests to see rate limiting in action
 for i in {1..70}; do
   curl -H "X-API-Key: your-api-key" \
-       https://api.donsylvester.dev/api/v1/health
+       https://api.yourdomain.com/api/v1/health
 done
 ```
 

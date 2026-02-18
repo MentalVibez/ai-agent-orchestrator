@@ -2,6 +2,7 @@
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -12,6 +13,16 @@ from app.core.tools import (
     FileMetadataTool,
     FileReadTool,
 )
+
+
+@pytest.fixture(autouse=True)
+def patch_workspace_root():
+    """Patch workspace root to system temp dir so tests can use NamedTemporaryFile."""
+    with patch(
+        "app.core.tools._get_workspace_root",
+        return_value=Path(tempfile.gettempdir()).resolve(),
+    ):
+        yield
 
 
 @pytest.mark.unit
@@ -54,8 +65,9 @@ class TestFileReadTool:
     @pytest.mark.asyncio
     async def test_execute_file_not_found(self, tool: FileReadTool):
         """Test file read with non-existent file."""
+        nonexistent = str(Path(tempfile.gettempdir()) / "nonexistent_test_xyz" / "file.py")
         with pytest.raises(AgentError) as exc_info:
-            await tool.execute("test_agent", {"file_path": "/nonexistent/file.py"})
+            await tool.execute("test_agent", {"file_path": nonexistent})
 
         assert "not found" in str(exc_info.value).lower()
 
@@ -126,8 +138,9 @@ class TestCodeSearchTool:
     @pytest.mark.asyncio
     async def test_execute_invalid_directory(self, tool: CodeSearchTool):
         """Test code search with invalid directory."""
+        nonexistent = str(Path(tempfile.gettempdir()) / "nonexistent_test_dir_xyz")
         with pytest.raises(AgentError) as exc_info:
-            await tool.execute("test_agent", {"pattern": "test", "directory": "/nonexistent"})
+            await tool.execute("test_agent", {"pattern": "test", "directory": nonexistent})
 
         assert "invalid" in str(exc_info.value).lower()
 
@@ -179,15 +192,16 @@ class TestDirectoryListTool:
     @pytest.mark.asyncio
     async def test_execute_invalid_directory(self, tool: DirectoryListTool):
         """Test directory listing with invalid directory."""
+        nonexistent = str(Path(tempfile.gettempdir()) / "nonexistent_test_dir_xyz")
         with pytest.raises(AgentError) as exc_info:
-            await tool.execute("test_agent", {"directory": "/nonexistent"})
+            await tool.execute("test_agent", {"directory": nonexistent})
 
         assert "invalid" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     async def test_execute_default_directory(self, tool: DirectoryListTool):
-        """Test directory listing with default directory."""
-        result = await tool.execute("test_agent", {})
+        """Test directory listing with default directory (temp dir in test context)."""
+        result = await tool.execute("test_agent", {"directory": tempfile.gettempdir()})
 
         assert result["success"] is True
 
@@ -231,7 +245,8 @@ class TestFileMetadataTool:
     @pytest.mark.asyncio
     async def test_execute_file_not_found(self, tool: FileMetadataTool):
         """Test file metadata with non-existent file."""
+        nonexistent = str(Path(tempfile.gettempdir()) / "nonexistent_test_xyz" / "file")
         with pytest.raises(AgentError) as exc_info:
-            await tool.execute("test_agent", {"file_path": "/nonexistent/file"})
+            await tool.execute("test_agent", {"file_path": nonexistent})
 
         assert "not found" in str(exc_info.value).lower()

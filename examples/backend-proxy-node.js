@@ -10,7 +10,7 @@ const router = express.Router();
 const axios = require('axios');
 
 // Load from environment variables
-const ORCHESTRATOR_API_URL = process.env.ORCHESTRATOR_API_URL || 'https://api.donsylvester.dev';
+const ORCHESTRATOR_API_URL = process.env.ORCHESTRATOR_API_URL || 'https://api.yourdomain.com';
 const ORCHESTRATOR_API_KEY = process.env.ORCHESTRATOR_API_KEY;
 
 if (!ORCHESTRATOR_API_KEY) {

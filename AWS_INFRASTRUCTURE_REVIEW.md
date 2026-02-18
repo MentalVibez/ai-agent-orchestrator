@@ -156,7 +156,7 @@ Application Load Balancer:
   Listeners:
     - HTTP (80) -> Redirect to HTTPS
     - HTTPS (443) -> Target group
-  SSL Certificate: ACM certificate for api.donsylvester.dev
+  SSL Certificate: ACM certificate for api.yourdomain.com
   Health Check: /api/v1/health
   Target Group:
     - Protocol: HTTP
@@ -168,7 +168,7 @@ Application Load Balancer:
 
 ```yaml
 ACM Certificate:
-  Domain: api.donsylvester.dev
+  Domain: api.yourdomain.com
   Validation: DNS or Email
   Region: us-east-1 (for ALB)
   Auto-renewal: Enabled

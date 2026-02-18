@@ -339,3 +339,21 @@ class TestExecuteWorkflow:
 
         # Workflow should succeed even if db save fails
         assert result.workflow_id == "wf1"
+
+    @pytest.mark.asyncio
+    async def test_execute_parallel_batch_completes_both_steps(self, executor):
+        """Steps in the same batch (no dependencies) run in parallel and both complete."""
+        # Two steps with no depends_on -> one batch of 2 steps
+        workflow = make_workflow("wf1", [make_step("s1"), make_step("s2")])
+
+        with patch(
+            "app.core.persistence.save_workflow_execution", MagicMock()
+        ):
+            result = await executor.execute(workflow)
+
+        assert result.workflow_id == "wf1"
+        assert result.success is True
+        assert len(result.step_results) == 2
+        assert all(r.status == WorkflowStepStatus.COMPLETED for r in result.step_results)
+        step_ids = {r.step_id for r in result.step_results}
+        assert step_ids == {"s1", "s2"}

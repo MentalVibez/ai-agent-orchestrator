@@ -1,18 +1,21 @@
 """API routes for MCP-centric runs (POST /run, GET /runs, GET /runs/:id, cancel, agent-profiles, mcp/servers)."""
 
 import asyncio
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 
 from app.core.auth import verify_api_key
 from app.core.config import settings
 from app.core.rate_limit import limiter
-from app.core.run_store import create_run, get_run_by_id, list_runs
+from app.core.run_queue import enqueue_run
+from app.core.run_store import create_run, get_run_by_id, get_run_events, list_runs
 from app.core.validation import validate_agent_profile_id, validate_goal, validate_run_context
 from app.mcp.config_loader import get_enabled_agent_profiles, load_mcp_servers_config
-from app.models.run import RunDetailResponse, RunRequest, RunResponse, RunStatus
-from app.planner.loop import run_planner_loop
+from app.models.run import ApproveRunRequest, RunDetailResponse, RunRequest, RunResponse, RunStatus
+from app.planner.loop import execute_approved_tool_and_update_run, resume_planner_loop, run_planner_loop
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
 
@@ -35,21 +38,29 @@ async def start_run(
     """
     goal = validate_goal(body.goal)
     context = validate_run_context(body.context)
+    if body.stream_tokens:
+        context = {**(context or {}), "_stream_tokens": True}
     profile_id = validate_agent_profile_id(body.agent_profile_id)
     run = create_run(
         goal=goal,
         agent_profile_id=profile_id,
         context=context,
     )
-    # Run planner in background so we return quickly
-    asyncio.create_task(
-        run_planner_loop(
-            run_id=run.run_id,
-            goal=goal,
-            agent_profile_id=profile_id,
-            context=context,
-        )
+    enqueued = await enqueue_run(
+        run_id=run.run_id,
+        goal=goal,
+        agent_profile_id=profile_id,
+        context=context,
     )
+    if not enqueued:
+        asyncio.create_task(
+            run_planner_loop(
+                run_id=run.run_id,
+                goal=goal,
+                agent_profile_id=profile_id,
+                context=context,
+            )
+        )
     return RunResponse(
         run_id=run.run_id,
         status=RunStatus(run.status),
@@ -62,16 +73,17 @@ async def start_run(
 
 @router.post(
     "/runs/{run_id}/approve",
-    summary="Approve pending tool call (HITL stub)",
-    description="When a run is awaiting_approval, approve the pending tool call to continue. Stub: sets status back to running.",
+    summary="Approve or reject pending tool call (HITL)",
+    description="When a run is awaiting_approval, approve (execute the tool and resume) or reject (fail the run).",
 )
 @limiter.limit(f"{settings.rate_limit_per_minute}/minute")
 async def approve_run(
     request: Request,
     run_id: str,
+    body: ApproveRunRequest,
     api_key: str = Depends(verify_api_key),
 ) -> dict:
-    """Approve a run that is awaiting human approval (HITL). Stub implementation."""
+    """Approve or reject a run that is awaiting human approval (HITL)."""
     run = get_run_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
@@ -79,8 +91,22 @@ async def approve_run(
         return {"run_id": run_id, "status": run.status, "message": "Run is not awaiting approval."}
     from app.core.run_store import update_run as do_update
 
-    do_update(run_id, status="running")
-    return {"run_id": run_id, "status": "running", "message": "Approved."}
+    if not body.approved:
+        do_update(
+            run_id,
+            status="failed",
+            error="Tool call rejected by user",
+            _clear_pending_tool_call=True,
+        )
+        return {"run_id": run_id, "status": "failed", "message": "Rejected."}
+    ok = await execute_approved_tool_and_update_run(
+        run_id,
+        modified_arguments=body.modified_arguments,
+    )
+    if not ok:
+        return {"run_id": run_id, "status": run.status, "message": "Could not execute approved tool."}
+    asyncio.create_task(resume_planner_loop(run_id))
+    return {"run_id": run_id, "status": "running", "message": "Approved; planner resuming."}
 
 
 @router.post(
@@ -102,7 +128,12 @@ async def reject_run(
         return {"run_id": run_id, "status": run.status, "message": "Run is not awaiting approval."}
     from app.core.run_store import update_run as do_update
 
-    do_update(run_id, status="failed", error="Tool call rejected by user")
+    do_update(
+        run_id,
+        status="failed",
+        error="Tool call rejected by user",
+        _clear_pending_tool_call=True,
+    )
     return {"run_id": run_id, "status": "failed", "message": "Rejected."}
 
 
@@ -151,6 +182,49 @@ async def list_runs_route(
 
 
 @router.get(
+    "/runs/{run_id}/stream",
+    summary="Stream run progress (SSE)",
+    description="Server-Sent Events stream for run status, steps, answer, and optionally token chunks. When the run was started with stream_tokens=true, event type 'token' carries LLM output chunks. Best-effort; poll GET /runs/{run_id} for authoritative final state.",
+    responses={404: {"description": "Run not found"}},
+)
+@limiter.limit(f"{settings.rate_limit_per_minute}/minute")
+async def stream_run(
+    request: Request,
+    run_id: str,
+    api_key: str = Depends(verify_api_key),
+) -> StreamingResponse:
+    """Stream run progress as SSE. Events: status, step, answer. Stops when run is completed/failed/cancelled."""
+    run = get_run_by_id(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+
+    async def event_generator():
+        last_event_id: Optional[int] = None
+        poll_interval = 0.5
+        while True:
+            events = get_run_events(run_id, after_id=last_event_id)
+            for eid, etype, payload in events:
+                last_event_id = eid
+                data = json.dumps({"event_id": eid, "type": etype, **payload}, default=str)
+                yield f"event: {etype}\ndata: {data}\n\n"
+            run_state = get_run_by_id(run_id)
+            if run_state and run_state.status in ("completed", "failed", "cancelled"):
+                yield f"event: end\ndata: {json.dumps({'status': run_state.status})}\n\n"
+                break
+            await asyncio.sleep(poll_interval)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get(
     "/runs/{run_id}",
     response_model=RunDetailResponse,
     summary="Get run details",
@@ -166,6 +240,9 @@ async def get_run(
     run = get_run_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    pending_approval = None
+    if run.status == "awaiting_approval":
+        pending_approval = getattr(run, "pending_tool_call", None)
     return RunDetailResponse(
         run_id=run.run_id,
         status=RunStatus(run.status),
@@ -178,6 +255,7 @@ async def get_run(
         answer=run.answer,
         steps=run.steps or [],
         tool_calls=run.tool_calls or [],
+        pending_approval=pending_approval,
     )
 
 

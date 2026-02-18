@@ -45,6 +45,9 @@ ENV/
 coverage.xml
 htmlcov/
 .tox/
+pytest_output.txt
+pytest_run_output.txt
+pytest_full_output.txt
 
 # Logs
 *.log

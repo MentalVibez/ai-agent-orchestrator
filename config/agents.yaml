@@ -47,3 +47,27 @@ agents:
       - resource_management
     enabled: true
 
+  # DEX MVP: endpoint visibility (osquery) + remediation (Ansible)
+  osquery:
+    id: osquery
+    name: Osquery Agent
+    description: Runs osquery for endpoint/device data (processes, ports, system info) for DEX
+    capabilities:
+      - endpoint_visibility
+      - process_list
+      - listening_ports
+      - system_info
+      - logged_in_users
+    enabled: true
+
+  ansible:
+    id: ansible
+    name: Ansible Remediation Agent
+    description: Runs Ansible playbooks to fix issues (restart services, config changes)
+    capabilities:
+      - remediation
+      - playbook_execution
+      - configuration_management
+      - service_management
+    enabled: true
+

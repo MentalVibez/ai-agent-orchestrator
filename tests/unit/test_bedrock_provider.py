@@ -1,7 +1,7 @@
 """Unit tests for Bedrock LLM Provider."""
 
 import json
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -43,12 +43,9 @@ class TestBedrockProvider:
 
         bedrock_provider.bedrock_runtime.invoke_model = Mock(return_value=mock_response)
 
-        with patch("asyncio.get_event_loop") as mock_loop:
-            mock_loop.return_value.run_in_executor = AsyncMock(return_value=mock_response)
+        result = await bedrock_provider.generate("Test prompt")
 
-            result = await bedrock_provider.generate("Test prompt")
-
-            assert result == "Test response from Bedrock"
+        assert result == "Test response from Bedrock"
 
     @pytest.mark.asyncio
     async def test_generate_with_system_prompt(self, bedrock_provider):
@@ -68,14 +65,11 @@ class TestBedrockProvider:
 
         bedrock_provider.bedrock_runtime.invoke_model = Mock(return_value=mock_response)
 
-        with patch("asyncio.get_event_loop") as mock_loop:
-            mock_loop.return_value.run_in_executor = AsyncMock(return_value=mock_response)
+        result = await bedrock_provider.generate(
+            "Test prompt", system_prompt="You are a helpful assistant"
+        )
 
-            result = await bedrock_provider.generate(
-                "Test prompt", system_prompt="You are a helpful assistant"
-            )
-
-            assert result == "Response"
+        assert result == "Response"
 
     @pytest.mark.asyncio
     async def test_generate_handles_client_error(self, bedrock_provider):
@@ -87,11 +81,8 @@ class TestBedrockProvider:
         mock_error = ClientError(error_response, "invoke_model")
         bedrock_provider.bedrock_runtime.invoke_model = Mock(side_effect=mock_error)
 
-        with patch("asyncio.get_event_loop") as mock_loop:
-            mock_loop.return_value.run_in_executor = AsyncMock(side_effect=mock_error)
-
-            with pytest.raises(LLMProviderError):
-                await bedrock_provider.generate("Test prompt")
+        with pytest.raises(LLMProviderError):
+            await bedrock_provider.generate("Test prompt")
 
     @pytest.mark.asyncio
     async def test_generate_with_metadata(self, bedrock_provider):
@@ -111,16 +102,13 @@ class TestBedrockProvider:
 
         bedrock_provider.bedrock_runtime.invoke_model = Mock(return_value=mock_response)
 
-        with patch("asyncio.get_event_loop") as mock_loop:
-            mock_loop.return_value.run_in_executor = AsyncMock(return_value=mock_response)
+        result = await bedrock_provider.generate_with_metadata("Test prompt")
 
-            result = await bedrock_provider.generate_with_metadata("Test prompt")
-
-            assert result["text"] == "Response"
-            assert "metadata" in result
-            assert result["metadata"]["input_tokens"] == 10
-            assert result["metadata"]["output_tokens"] == 5
-            assert result["metadata"]["total_tokens"] == 15
+        assert result["text"] == "Response"
+        assert "metadata" in result
+        assert result["metadata"]["input_tokens"] == 10
+        assert result["metadata"]["output_tokens"] == 5
+        assert result["metadata"]["total_tokens"] == 15
 
     @pytest.mark.asyncio
     async def test_stream(self, bedrock_provider):
@@ -139,12 +127,9 @@ class TestBedrockProvider:
             return_value=mock_response
         )
 
-        with patch("asyncio.get_event_loop") as mock_loop:
-            mock_loop.return_value.run_in_executor = AsyncMock(return_value=mock_response)
+        chunks = []
+        async for chunk in bedrock_provider.stream("Test prompt"):
+            chunks.append(chunk)
 
-            chunks = []
-            async for chunk in bedrock_provider.stream("Test prompt"):
-                chunks.append(chunk)
-
-            # Note: Actual streaming implementation may vary
-            assert len(chunks) >= 0  # At least verify it doesn't crash
+        # Note: Actual streaming implementation may vary
+        assert len(chunks) >= 0  # At least verify it doesn't crash

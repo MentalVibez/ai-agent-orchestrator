@@ -223,7 +223,7 @@ provisioning needs, and deployment requirements. Provide specific recommendation
         Returns:
             Enhanced prompt
         """
-        if not available_tools:
+        if available_tools is None:
             tools = self._tool_registry.get_tools_for_agent(agent_id)
             available_tools = [tool.tool_id for tool in tools]
 

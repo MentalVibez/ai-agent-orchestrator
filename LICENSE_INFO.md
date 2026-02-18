@@ -1,51 +1,55 @@
 # License Information
 
-## Current License: MIT License
+## Current License: Apache License 2.0
 
-This project is licensed under the **MIT License**, one of the most permissive open-source licenses.
+This project is licensed under the **Apache License 2.0**, an enterprise-friendly open-source licence that provides explicit patent protection alongside standard permissive terms.
 
-## Why MIT License?
+## Why Apache 2.0?
 
-The MIT License was chosen because:
+Apache 2.0 was chosen because:
 
-1. **Template Repository**: This is a template meant to be used and adapted by others
-2. **Maximum Flexibility**: Allows commercial use, modification, and distribution
-3. **Widely Accepted**: Most popular license for open-source projects
-4. **Simple**: Easy to understand and comply with
-5. **Business-Friendly**: Can be used in proprietary projects
+1. **Patent Grant**: Explicitly grants users a royalty-free patent licence from all contributors — protects users and the community from patent claims
+2. **Enterprise-Friendly**: Widely adopted by enterprise open-source projects; accepted by legal teams across industry
+3. **Commercial Use**: Allows full commercial use, modification, and redistribution
+4. **Competitive Safety**: Appropriate for open-source alternatives to commercial software — contributors cannot later assert patents against users
+5. **Compatible**: Compatible with GPL v3, LGPL, MIT, and most other open-source licences
 
 ## What You Can Do
 
-✅ **Commercial Use** - Use in commercial projects  
-✅ **Modify** - Change the code to fit your needs  
-✅ **Distribute** - Share your modified version  
-✅ **Private Use** - Use in proprietary/closed-source projects  
-✅ **Sublicense** - Include in projects with different licenses  
+✅ **Commercial Use** — Use in commercial products and services
+✅ **Modify** — Change the code to fit your needs
+✅ **Distribute** — Share original or modified versions
+✅ **Private Use** — Use in proprietary/closed-source projects
+✅ **Patent Use** — Contributors grant you a royalty-free patent licence
 
 ## What You Must Do
 
-⚠️ **Include License** - Keep the MIT License file and copyright notice  
-⚠️ **Attribution** - Credit the original authors (optional but appreciated)
+⚠️ **Include Licence** — Keep the Apache 2.0 licence file and copyright notice in all distributions
+⚠️ **State Changes** — If you modify files, add a notice stating you changed them
+⚠️ **Attribution** — Retain all existing copyright, patent, and attribution notices
 
 ## What You Cannot Do
 
-❌ **Hold Liable** - The authors are not liable for any damages  
-❌ **Remove Copyright** - Must keep the original copyright notice
+❌ **Use Trademarks** — Cannot use the project's name/logo to endorse your derivative products without permission
+❌ **Hold Liable** — Contributors are not liable for any damages
 
-## License Text
+## Licence Text
 
-See [LICENSE](LICENSE) for the full license text.
+See [LICENSE](LICENSE) for the full licence text, or visit https://www.apache.org/licenses/LICENSE-2.0
 
-## Alternative Licenses
+## Comparison with MIT (Previous Licence)
 
-If you're using this as a template and want a different license:
+| Feature | MIT | Apache 2.0 |
+|---------|-----|-----------|
+| Commercial use | ✅ | ✅ |
+| Modification | ✅ | ✅ |
+| Distribution | ✅ | ✅ |
+| Patent grant | ❌ | ✅ |
+| Trademark clause | ❌ | ✅ |
+| State changes required | ❌ | ✅ |
 
-- **Apache 2.0**: Similar to MIT but includes patent grant
-- **BSD 3-Clause**: Similar to MIT with additional non-endorsement clause
-- **GPL v3**: Copyleft - requires derivatives to be open source
-- **Proprietary**: You can use MIT-licensed code in proprietary projects
+The key improvement over MIT is the **explicit patent grant**, which is important when building software that may compete with or replicate functionality of commercial products.
 
 ## Questions?
 
 For questions about licensing, please open an issue on the repository.
-

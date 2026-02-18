@@ -86,7 +86,8 @@ class TestPersistence:
         mock_query.filter.return_value = mock_query
         mock_query.order_by.return_value = mock_query
         mock_query.offset.return_value = mock_query
-        mock_query.limit.return_value = [MagicMock()]
+        mock_query.limit.return_value = mock_query
+        mock_query.all.return_value = [MagicMock()]
 
         results = get_execution_history()
 
@@ -101,7 +102,8 @@ class TestPersistence:
         mock_query.filter.return_value = mock_query
         mock_query.order_by.return_value = mock_query
         mock_query.offset.return_value = mock_query
-        mock_query.limit.return_value = []
+        mock_query.limit.return_value = mock_query
+        mock_query.all.return_value = []
 
         get_execution_history(agent_id="test_agent")
 

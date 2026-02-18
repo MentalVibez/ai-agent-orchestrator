@@ -26,7 +26,7 @@
 ### 4. CORS Protection
 - **Location**: `app/main.py`
 - **Configuration**: Only allows requests from origins specified in `CORS_ORIGINS`
-- **Default**: Includes `https://donsylvester.dev` and localhost for development
+- **Default**: Includes `https://yourdomain.com` and localhost for development
 
 ### 5. Environment Variable Management
 - **Location**: `app/core/config.py`
@@ -82,11 +82,11 @@
 ### Test API Key Protection:
 ```bash
 # Should fail without API key
-curl https://api.donsylvester.dev/api/v1/agents
+curl https://api.yourdomain.com/api/v1/agents
 
 # Should succeed with API key
 curl -H "X-API-Key: your-api-key" \
-     https://api.donsylvester.dev/api/v1/agents
+     https://api.yourdomain.com/api/v1/agents
 ```
 
 ### Test Rate Limiting:
@@ -94,7 +94,7 @@ curl -H "X-API-Key: your-api-key" \
 # Make rapid requests to trigger rate limit
 for i in {1..70}; do
   curl -H "X-API-Key: your-api-key" \
-       https://api.donsylvester.dev/api/v1/health
+       https://api.yourdomain.com/api/v1/health
 done
 ```
 

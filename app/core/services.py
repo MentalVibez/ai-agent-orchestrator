@@ -65,8 +65,11 @@ class ServiceContainer:
         infrastructure_agent = InfrastructureAgent(llm_provider=llm_provider)
         self._agent_registry.register(infrastructure_agent)
 
-        # Initialize Orchestrator
-        self._orchestrator = Orchestrator(agent_registry=self._agent_registry)
+        # Initialize Orchestrator (optional LLM for routing when USE_LLM_ROUTING=true)
+        self._orchestrator = Orchestrator(
+            agent_registry=self._agent_registry,
+            llm_manager=self._llm_manager,
+        )
 
         # Initialize Workflow Executor
         self._workflow_executor = WorkflowExecutor(orchestrator=self._orchestrator)

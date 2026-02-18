@@ -5,6 +5,7 @@ agent_profiles:
   default:
     name: Default
     description: General-purpose goal execution using available MCP tools and legacy agents
+    # approval_required_tools: []  # optional: list of tool names that require human approval before execution (HITL)
     role_prompt: |
       You are a helpful assistant that plans steps to achieve the user's goal.
       You can use the available MCP tools. Output exactly one next action: either

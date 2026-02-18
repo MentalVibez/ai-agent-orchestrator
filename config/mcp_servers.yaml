@@ -8,7 +8,7 @@ mcp_servers:
   #   name: Filesystem
   #   transport: stdio
   #   command: npx
-  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\marad\\OneDrive\\Documents"]
+  #   args: ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\YourUsername\\Documents"]
   #   env: {}
   #   categories: [files, local]
   #   enabled: false

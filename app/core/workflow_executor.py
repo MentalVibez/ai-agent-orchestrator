@@ -1,5 +1,6 @@
 """Workflow executor for multi-step, multi-agent workflows."""
 
+import asyncio
 import logging
 import time
 from collections import defaultdict, deque
@@ -62,37 +63,40 @@ class WorkflowExecutor:
         step_outputs: Dict[str, Any] = {}
         workflow_context = input_data.copy()
 
-        # Execute steps in order
+        # Execute steps: each batch runs in parallel; batches run in order
         for step_batch in execution_order:
-            for step in step_batch:
+            # Run all steps in this batch concurrently
+            batch_tasks = [
+                self.execute_step(
+                    step, self._prepare_step_context(step, workflow_context, step_outputs)
+                )
+                for step in step_batch
+            ]
+            batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+
+            step_failed = False
+            for step, result in zip(step_batch, batch_results):
                 try:
-                    # Prepare context for this step
-                    step_context = self._prepare_step_context(step, workflow_context, step_outputs)
-
-                    # Execute step
-                    step_result = await self.execute_step(step, step_context)
-                    step_results[step.step_id] = step_result
-
-                    # Store step output for subsequent steps
-                    if step_result.status == WorkflowStepStatus.COMPLETED:
-                        step_outputs[step.step_id] = step_result.agent_result
-                        # Merge step output into workflow context
-                        if isinstance(step_result.agent_result, dict):
-                            workflow_context.update(step_result.agent_result)
-                    elif step_result.status == WorkflowStepStatus.FAILED:
-                        # Stop workflow on step failure (can be made configurable)
-                        logger.error(f"Workflow step '{step.step_id}' failed: {step_result.error}")
-                        break
-
+                    if isinstance(result, Exception):
+                        raise result
+                    step_result = result
                 except Exception as e:
-                    logger.error(f"Error executing workflow step '{step.step_id}': {str(e)}")
-                    step_results[step.step_id] = WorkflowStepResult(
+                    logger.error("Error executing workflow step '%s': %s", step.step_id, e)
+                    step_result = WorkflowStepResult(
                         step_id=step.step_id,
                         status=WorkflowStepStatus.FAILED,
                         error=str(e),
-                        timestamp=time.time(),
                     )
-                    break
+                step_results[step.step_id] = step_result
+                if step_result.status == WorkflowStepStatus.COMPLETED:
+                    step_outputs[step.step_id] = step_result.agent_result
+                    if isinstance(step_result.agent_result, dict):
+                        workflow_context.update(step_result.agent_result)
+                elif step_result.status == WorkflowStepStatus.FAILED:
+                    logger.error("Workflow step '%s' failed: %s", step.step_id, step_result.error)
+                    step_failed = True
+            if step_failed:
+                break
 
         # Aggregate results
         duration = time.time() - start_time

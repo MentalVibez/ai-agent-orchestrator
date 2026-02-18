@@ -94,6 +94,18 @@ class WorkflowExecution(Base):
         }
 
 
+class RunEvent(Base):
+    """Event emitted during a run for SSE streaming (DB-backed for cross-process compatibility)."""
+
+    __tablename__ = "run_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(String, index=True, nullable=False)
+    event_type = Column(String, nullable=False)  # status, step, tool_call, answer
+    payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class Run(Base):
     """MCP-centric run: goal, profile, status, steps and tool calls stored as JSON."""
 
@@ -114,10 +126,12 @@ class Run(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    # When status is awaiting_approval, holds { server_id, tool_name, arguments, reason? } for HITL.
+    pending_tool_call = Column(JSON, nullable=True)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for API response."""
-        return {
+        out = {
             "run_id": self.run_id,
             "goal": self.goal,
             "agent_profile_id": self.agent_profile_id,
@@ -131,3 +145,8 @@ class Run(Base):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }
+        if self.status == "awaiting_approval":
+            pending = getattr(self, "pending_tool_call", None)
+            if pending:
+                out["pending_approval"] = pending
+        return out

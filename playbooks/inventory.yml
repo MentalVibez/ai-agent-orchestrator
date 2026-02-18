@@ -1,0 +1,6 @@
+# Minimal inventory for local/self remediation (DEX MVP).
+# Use -i inventory.yml when calling ansible-playbook.
+all:
+  hosts:
+    localhost:
+      ansible_connection: local

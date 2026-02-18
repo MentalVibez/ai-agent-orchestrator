@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # CORS Settings
     cors_origins: str = Field(
-        default="https://donsylvester.dev,http://localhost:3000,http://localhost:8000",
+        default="https://yourdomain.com,http://localhost:3000,http://localhost:8000",
         alias="CORS_ORIGINS",
     )
 
@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     api_key: str = Field(default="", alias="API_KEY")
     rate_limit_per_minute: int = Field(default=60, alias="RATE_LIMIT_PER_MINUTE")
     require_api_key: bool = Field(default=True, alias="REQUIRE_API_KEY")
+    # Webhook secret for HMAC-SHA256 validation of Prometheus Alertmanager payloads.
+    # Set to a strong random string (e.g. openssl rand -hex 32). Empty = webhook auth disabled.
+    webhook_secret: str = Field(default="", alias="WEBHOOK_SECRET")
     # Restrict file tools (read, list, search, metadata) to paths under this directory. Empty = use process cwd.
     agent_workspace_root: str = Field(default="", alias="AGENT_WORKSPACE_ROOT")
     # Best-effort prompt injection filter: redact blocklist phrases in user goal/context. Set false to disable.
@@ -56,6 +59,20 @@ class Settings(BaseSettings):
     )
     # Planner: timeout per LLM call (seconds). 0 = no timeout.
     planner_llm_timeout_seconds: int = Field(default=120, alias="PLANNER_LLM_TIMEOUT_SECONDS")
+    # Maximum concurrent webhook-triggered runs before returning HTTP 429.
+    webhook_max_concurrent_runs: int = Field(default=5, alias="WEBHOOK_MAX_CONCURRENT_RUNS")
+    # Webhook alert deduplication window in seconds.
+    webhook_dedup_ttl_seconds: int = Field(default=300, alias="WEBHOOK_DEDUP_TTL_SECONDS")
+    # Use LLM to route POST /orchestrate tasks to an agent (when True). Fallback to keyword routing on failure.
+    use_llm_routing: bool = Field(default=False, alias="USE_LLM_ROUTING")
+    # Timeout in seconds for LLM routing call. 0 = use default (10).
+    llm_routing_timeout_seconds: int = Field(default=10, alias="LLM_ROUTING_TIMEOUT_SECONDS")
+    # Optional job queue for runs (e.g. redis://localhost:6379). Empty = run planner in-process.
+    run_queue_url: str = Field(default="", alias="RUN_QUEUE_URL")
+    # Optional OpenTelemetry tracing. When True, trace runs and planner steps/tool calls (OTLP or console).
+    otel_enabled: bool = Field(default=False, alias="OTEL_ENABLED")
+    # OTLP endpoint for traces (e.g. http://localhost:4318/v1/traces). Empty = use SDK default.
+    otel_exporter_otlp_endpoint: str = Field(default="", alias="OTEL_EXPORTER_OTLP_ENDPOINT")
 
     @property
     def cors_origins_list(self) -> List[str]:

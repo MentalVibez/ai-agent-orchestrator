@@ -16,7 +16,7 @@ Parameters:
   CORSOrigins:
     Type: String
     Description: Comma-separated list of allowed CORS origins
-    Default: "https://donsylvester.dev,https://www.donsylvester.dev"
+    Default: "https://yourdomain.com,https://www.yourdomain.com"
   
   CodeS3Bucket:
     Type: String

@@ -1,11 +1,11 @@
-# Quick Setup Checklist for donsylvester.dev Chatbot
+# Quick Setup Checklist for yourdomain.com Chatbot
 
 ## 🎯 What You Need to Set Up
 
 ### 1. **Infrastructure Setup** (One-time)
 
-- [ ] **Subdomain**: Create `api.donsylvester.dev` DNS A record pointing to your server
-- [ ] **SSL Certificate**: Set up Let's Encrypt SSL for `api.donsylvester.dev`
+- [ ] **Subdomain**: Create `api.yourdomain.com` DNS A record pointing to your server
+- [ ] **SSL Certificate**: Set up Let's Encrypt SSL for `api.yourdomain.com`
 - [ ] **Server**: Ensure you have a server/VPS with Docker or Python 3.11+
 - [ ] **Firewall**: Open ports 80, 443 (and optionally 8000 for direct access)
 
@@ -36,7 +36,7 @@
 
 - [ ] **Set CORS Origins**:
   ```bash
-  CORS_ORIGINS=https://donsylvester.dev,https://www.donsylvester.dev
+  CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
   ```
 
 - [ ] **Deploy with Docker**:
@@ -46,14 +46,14 @@
 
 - [ ] **Test API**:
   ```bash
-  curl https://api.donsylvester.dev/api/v1/health
+  curl https://api.yourdomain.com/api/v1/health
   ```
 
 ### 3. **Backend Proxy Setup** (Your Existing Backend)
 
 - [ ] **Add Environment Variables** to your backend `.env`:
   ```bash
-  ORCHESTRATOR_API_URL=https://api.donsylvester.dev
+  ORCHESTRATOR_API_URL=https://api.yourdomain.com
   ORCHESTRATOR_API_KEY=<the-api-key-from-orchestrator-.env>
   ```
 
@@ -77,7 +77,7 @@
 
 ### 5. **Nginx Reverse Proxy** (If not using Docker directly)
 
-- [ ] **Create Nginx Config** for `api.donsylvester.dev`
+- [ ] **Create Nginx Config** for `api.yourdomain.com`
 - [ ] **Set up SSL** with Let's Encrypt
 - [ ] **Test HTTPS** access
 
@@ -92,7 +92,7 @@
 ### Orchestrator API (.env)
 ```bash
 API_KEY=<generate-strong-key>
-CORS_ORIGINS=https://donsylvester.dev,https://www.donsylvester.dev
+CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 AWS_ACCESS_KEY_ID=<your-aws-key>
 AWS_SECRET_ACCESS_KEY=<your-aws-secret>
 AWS_REGION=us-east-1
@@ -103,7 +103,7 @@ RATE_LIMIT_PER_MINUTE=60
 
 ### Your Backend (.env)
 ```bash
-ORCHESTRATOR_API_URL=https://api.donsylvester.dev
+ORCHESTRATOR_API_URL=https://api.yourdomain.com
 ORCHESTRATOR_API_KEY=<same-as-orchestrator-api-key>
 ```
 
@@ -118,7 +118,7 @@ docker-compose up -d
 
 # 2. Test it works
 curl -H "X-API-Key: your-key" \
-     https://api.donsylvester.dev/api/v1/health
+     https://api.yourdomain.com/api/v1/health
 
 # 3. Add proxy to your backend (see INTEGRATION_GUIDE.md)
 

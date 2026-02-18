@@ -13,7 +13,7 @@ from typing import Dict, Any
 orchestrator_bp = Blueprint('orchestrator', __name__)
 
 # Load from environment variables
-ORCHESTRATOR_API_URL = os.getenv('ORCHESTRATOR_API_URL', 'https://api.donsylvester.dev')
+ORCHESTRATOR_API_URL = os.getenv('ORCHESTRATOR_API_URL', 'https://api.yourdomain.com')
 ORCHESTRATOR_API_KEY = os.getenv('ORCHESTRATOR_API_KEY')
 
 if not ORCHESTRATOR_API_KEY:

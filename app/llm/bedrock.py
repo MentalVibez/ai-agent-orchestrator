@@ -92,7 +92,7 @@ class BedrockProvider(LLMProvider):
                 }
 
                 # Call Bedrock (run in thread pool since boto3 is synchronous)
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 response = await loop.run_in_executor(
                     None,
                     lambda: self.bedrock_runtime.invoke_model(
@@ -204,7 +204,7 @@ class BedrockProvider(LLMProvider):
             }
 
             # Call Bedrock with streaming
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             response = await loop.run_in_executor(
                 None,
                 lambda: self.bedrock_runtime.invoke_model_with_response_stream(
@@ -276,7 +276,7 @@ class BedrockProvider(LLMProvider):
             }
 
             # Call Bedrock
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             response = await loop.run_in_executor(
                 None,
                 lambda: self.bedrock_runtime.invoke_model(

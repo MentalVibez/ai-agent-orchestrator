@@ -1,4 +1,4 @@
-# AWS Infrastructure Analysis - donsylvester.dev
+# AWS Infrastructure Analysis - yourdomain.com
 
 Based on your deployment script, here's an analysis of your current AWS infrastructure and recommendations for integrating the AI Agent Orchestrator.
 
@@ -6,7 +6,7 @@ Based on your deployment script, here's an analysis of your current AWS infrastr
 
 ### Existing Services
 
-1. **S3 Bucket**: `donsylvester.dev`
+1. **S3 Bucket**: `yourdomain.com`
    - Static website hosting
    - Used for frontend deployment
    - Region: `us-east-1`
@@ -14,7 +14,7 @@ Based on your deployment script, here's an analysis of your current AWS infrastr
 2. **CloudFront Distribution**: `YOUR_CLOUDFRONT_DISTRIBUTION_ID`
    - CDN for static content
    - CloudFront URL: `YOUR_CLOUDFRONT_URL.cloudfront.net` (or your custom domain)
-   - Custom domain: `donsylvester.dev`
+   - Custom domain: `yourdomain.com`
 
 3. **AWS Account**: Active (verified via `aws sts get-caller-identity`)
 
@@ -25,7 +25,7 @@ User Request
    ↓
 CloudFront (YOUR_CLOUDFRONT_DISTRIBUTION_ID)
    ↓
-S3 Bucket (donsylvester.dev)
+S3 Bucket (yourdomain.com)
    ↓
 Static Website (HTML/CSS/JS)
 ```
@@ -74,7 +74,7 @@ Static Website (HTML/CSS/JS)
 ### Option 1: Add API to Existing Setup (Recommended)
 
 ```
-User Request (donsylvester.dev)
+User Request (yourdomain.com)
    ↓
 CloudFront Distribution
    ├── /api/* → API Gateway → Lambda
@@ -101,11 +101,11 @@ AWS Bedrock
 ### Option 2: Separate API Subdomain
 
 ```
-User Request (donsylvester.dev)
+User Request (yourdomain.com)
    ↓
 CloudFront → S3 (static site)
 
-User Request (api.donsylvester.dev)
+User Request (api.yourdomain.com)
    ↓
 Application Load Balancer
    ↓
@@ -128,11 +128,11 @@ AWS Bedrock
 ### Option 3: EC2 Instance (Simple)
 
 ```
-User Request (donsylvester.dev)
+User Request (yourdomain.com)
    ↓
 CloudFront → S3 (static site)
 
-User Request (api.donsylvester.dev)
+User Request (api.yourdomain.com)
    ↓
 EC2 Instance (Orchestrator API)
    ↓
@@ -182,15 +182,15 @@ Add API origin to CloudFront:
   "Origins": {
     "Items": [
       {
-        "Id": "S3-donsylvester.dev",
-        "DomainName": "donsylvester.dev.s3.amazonaws.com",
+        "Id": "S3-yourdomain.com",
+        "DomainName": "yourdomain.com.s3.amazonaws.com",
         "S3OriginConfig": {
           "OriginAccessIdentity": ""
         }
       },
       {
         "Id": "API-Orchestrator",
-        "DomainName": "api.donsylvester.dev",
+        "DomainName": "api.yourdomain.com",
         "CustomOriginConfig": {
           "HTTPPort": 443,
           "HTTPSPort": 443,
@@ -220,16 +220,16 @@ Add API subdomain:
 
 ```bash
 # Route 53 or DNS provider
-api.donsylvester.dev → ALB or API Gateway endpoint
+api.yourdomain.com → ALB or API Gateway endpoint
 ```
 
 ### 4. **SSL Certificate**
 
-Request ACM certificate for `api.donsylvester.dev`:
+Request ACM certificate for `api.yourdomain.com`:
 
 ```bash
 aws acm request-certificate \
-  --domain-name api.donsylvester.dev \
+  --domain-name api.yourdomain.com \
   --validation-method DNS \
   --region us-east-1
 ```
@@ -348,7 +348,7 @@ Total:               ~$57-97/month
 - [ ] EC2 (simple, cost-effective)
 
 ### Step 2: Set Up API Infrastructure
-- [ ] Create API subdomain (api.donsylvester.dev)
+- [ ] Create API subdomain (api.yourdomain.com)
 - [ ] Request SSL certificate (ACM)
 - [ ] Deploy API service
 - [ ] Configure IAM roles/permissions

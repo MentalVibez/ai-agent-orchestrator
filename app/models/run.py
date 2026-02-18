@@ -23,6 +23,10 @@ class RunRequest(BaseModel):
         default="default", description="Agent profile (from agent_profiles.yaml)"
     )
     context: Optional[Dict[str, Any]] = Field(None, description="Optional context for the run")
+    stream_tokens: bool = Field(
+        default=False,
+        description="When true, LLM token chunks are emitted as SSE 'token' events during the run",
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -72,6 +76,16 @@ class RunResponse(BaseModel):
     message: Optional[str] = None
 
 
+class ApproveRunRequest(BaseModel):
+    """Request to approve or reject a pending tool call (HITL)."""
+
+    approved: bool = Field(..., description="True to execute the pending tool call, false to reject")
+    modified_arguments: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional override for the tool arguments (only when approved=true)",
+    )
+
+
 class RunDetailResponse(BaseModel):
     """Full run details (for GET /runs/:id)."""
 
@@ -86,4 +100,8 @@ class RunDetailResponse(BaseModel):
     answer: Optional[str] = Field(None, description="Final answer when status=completed")
     steps: List[Any] = Field(default_factory=list, description="Plan steps / tool calls")
     tool_calls: List[Any] = Field(default_factory=list)
+    pending_approval: Optional[Dict[str, Any]] = Field(
+        None,
+        description="When status=awaiting_approval, the pending tool call (server_id, tool_name, arguments, step_index)",
+    )
     message: Optional[str] = None

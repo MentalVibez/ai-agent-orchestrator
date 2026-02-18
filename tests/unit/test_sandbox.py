@@ -1,5 +1,6 @@
 """Unit tests for Agent Sandbox."""
 
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -118,6 +119,7 @@ class TestAgentSandbox:
             # Should not raise exception
             assert True
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="resource module not available on Windows")
     @patch("app.core.sandbox.resource.setrlimit")
     def test_execute_with_limits_sets_memory_limit(self, mock_setrlimit, sandbox: AgentSandbox):
         """Test that memory limits are set."""

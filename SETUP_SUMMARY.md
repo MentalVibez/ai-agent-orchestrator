@@ -1,21 +1,21 @@
-# Complete Setup Summary for donsylvester.dev
+# Complete Setup Summary for yourdomain.com
 
 This document lists **all the setups you need** to integrate the AI Agent Orchestrator into your chatbot, aside from API key management.
 
 ## 🏗️ Infrastructure Setups
 
 ### 1. **DNS Configuration**
-   - **What**: Create subdomain `api.donsylvester.dev`
+   - **What**: Create subdomain `api.yourdomain.com`
    - **How**: Add A record in your DNS provider pointing to your server IP
    - **Why**: Separate API endpoint from main website
    - **Time**: ~5 minutes (plus propagation)
 
 ### 2. **SSL Certificate**
-   - **What**: HTTPS certificate for `api.donsylvester.dev`
+   - **What**: HTTPS certificate for `api.yourdomain.com`
    - **How**: Use Let's Encrypt (free) via Certbot
    - **Why**: Secure API communication
    - **Time**: ~10 minutes
-   - **Command**: `sudo certbot --nginx -d api.donsylvester.dev`
+   - **Command**: `sudo certbot --nginx -d api.yourdomain.com`
 
 ### 3. **Server/VPS Setup**
    - **What**: Server to host the orchestrator API
@@ -29,9 +29,9 @@ This document lists **all the setups you need** to integrate the AI Agent Orches
    - **Time**: Already done if using existing server
 
 ### 4. **Reverse Proxy (Nginx)**
-   - **What**: Nginx configuration for `api.donsylvester.dev`
+   - **What**: Nginx configuration for `api.yourdomain.com`
    - **Why**: SSL termination, load balancing, security headers
-   - **Files**: `/etc/nginx/sites-available/api.donsylvester.dev`
+   - **Files**: `/etc/nginx/sites-available/api.yourdomain.com`
    - **Time**: ~15 minutes
    - **See**: `DEPLOYMENT.md` for full config
 
@@ -77,7 +77,7 @@ This document lists **all the setups you need** to integrate the AI Agent Orches
 
 ### 9. **Backend Environment Variables**
    - **What**: Add to your backend `.env`:
-     - `ORCHESTRATOR_API_URL=https://api.donsylvester.dev`
+     - `ORCHESTRATOR_API_URL=https://api.yourdomain.com`
      - `ORCHESTRATOR_API_KEY=<your-api-key>`
    - **Time**: ~2 minutes
 
@@ -110,7 +110,7 @@ This document lists **all the setups you need** to integrate the AI Agent Orches
 
 ### 13. **CORS Configuration**
    - **What**: Configure allowed origins
-   - **Setting**: `CORS_ORIGINS=https://donsylvester.dev,https://www.donsylvester.dev`
+   - **Setting**: `CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com`
    - **Time**: ~1 minute
 
 ### 14. **Rate Limiting Configuration**
@@ -143,7 +143,7 @@ This document lists **all the setups you need** to integrate the AI Agent Orches
 
 ### 18. **Health Check Monitoring**
    - **What**: Monitor API health
-   - **Endpoint**: `https://api.donsylvester.dev/api/v1/health`
+   - **Endpoint**: `https://api.yourdomain.com/api/v1/health`
    - **Tools**: Uptime monitoring service (UptimeRobot, etc.)
    - **Time**: ~10 minutes
 
@@ -157,7 +157,7 @@ Copy this checklist and check off as you complete:
 
 ```
 Infrastructure:
-[ ] DNS: api.donsylvester.dev A record
+[ ] DNS: api.yourdomain.com A record
 [ ] SSL: Let's Encrypt certificate
 [ ] Nginx: Reverse proxy configuration
 [ ] Firewall: Ports 80, 443 open

@@ -49,19 +49,19 @@ class TestValidateAgentProfileId:
     """Test cases for validate_agent_profile_id."""
 
     def test_none_returns_default(self):
-        with patch("app.core.validation.get_enabled_agent_profiles") as m:
+        with patch("app.mcp.config_loader.get_enabled_agent_profiles") as m:
             m.return_value = [("default", {}), ("browser", {})]
             assert validate_agent_profile_id(None) == "default"
 
     def test_invalid_chars_raises(self):
-        with patch("app.core.validation.get_enabled_agent_profiles") as m:
+        with patch("app.mcp.config_loader.get_enabled_agent_profiles") as m:
             m.return_value = [("default", {})]
             with pytest.raises(ValidationError) as exc_info:
                 validate_agent_profile_id("pro file!")
             assert exc_info.value.field == "agent_profile_id"
 
     def test_unknown_profile_raises(self):
-        with patch("app.core.validation.get_enabled_agent_profiles") as m:
+        with patch("app.mcp.config_loader.get_enabled_agent_profiles") as m:
             m.return_value = [("default", {}), ("browser", {})]
             with pytest.raises(ValidationError) as exc_info:
                 validate_agent_profile_id("unknown_profile")
@@ -70,7 +70,7 @@ class TestValidateAgentProfileId:
             )
 
     def test_known_profile_returns_sanitized(self):
-        with patch("app.core.validation.get_enabled_agent_profiles") as m:
+        with patch("app.mcp.config_loader.get_enabled_agent_profiles") as m:
             m.return_value = [("default", {}), ("browser", {})]
             assert validate_agent_profile_id("browser") == "browser"
             assert validate_agent_profile_id("default") == "default"

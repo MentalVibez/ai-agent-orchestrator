@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.agents.system_monitoring import SystemMonitoringAgent
+from app.agents.system_monitoring import SystemMonitoringAgent, _collect_static_metrics
 from tests.fixtures.mock_llm import MockLLMProvider
 
 
@@ -41,7 +41,7 @@ class TestSystemMonitoringAgent:
         result = await agent.execute("Check system health", context=context)
 
         assert result.success is True
-        assert "context_used" in result.output or "metrics_collected" in result.output
+        assert "metrics" in result.output
 
     @pytest.mark.asyncio
     async def test_execute_handles_errors(self, agent: SystemMonitoringAgent):
@@ -57,7 +57,7 @@ class TestSystemMonitoringAgent:
 
     def test_collect_metrics_basic(self, agent: SystemMonitoringAgent):
         """Test collecting basic system metrics."""
-        metrics = agent._collect_metrics({})
+        metrics = _collect_static_metrics({})
 
         assert "platform" in metrics
         assert "cpu_count" in metrics
@@ -66,7 +66,7 @@ class TestSystemMonitoringAgent:
     def test_collect_metrics_with_context(self, agent: SystemMonitoringAgent):
         """Test collecting metrics with context data."""
         context = {"cpu_usage": 85.0, "memory_usage": 70.0, "disk_usage": 60.0}
-        metrics = agent._collect_metrics(context)
+        metrics = _collect_static_metrics(context)
 
         assert metrics["cpu_usage_percent"] == 85.0
         assert metrics["memory_usage_percent"] == 70.0

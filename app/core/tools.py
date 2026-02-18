@@ -106,6 +106,10 @@ class FileReadTool(AgentTool):
         ".txt",
         ".sh",
         ".sql",
+        ".log",  # Log files for LogAnalysisAgent
+        ".conf",
+        ".cfg",
+        ".ini",
     }
 
     def __init__(self):

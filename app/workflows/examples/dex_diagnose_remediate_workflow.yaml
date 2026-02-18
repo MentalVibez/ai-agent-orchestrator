@@ -1,0 +1,32 @@
+# DEX MVP: Diagnose then Remediate (osquery/system_monitoring + Ansible)
+# Use with POST /api/v1/workflows and input_data: { "target": "optional", "playbook": "restart_service.yml", "extra_vars": {} }
+workflow_id: dex_diagnose_remediate_workflow
+name: DEX Diagnose and Remediate
+description: Run endpoint visibility (osquery) and system check, then run Ansible playbook for remediation
+enabled: true
+steps:
+  - step_id: diagnose_osquery
+    name: Endpoint visibility (osquery)
+    agent_id: osquery
+    task: Collect endpoint data - system info and top processes by CPU
+    depends_on: []
+    context:
+      query_key: system_info
+
+  - step_id: diagnose_system
+    name: System health check
+    agent_id: system_monitoring
+    task: Analyze system resources (CPU, memory, disk) and identify issues
+    depends_on:
+      - diagnose_osquery
+    context: {}
+
+  - step_id: remediate
+    name: Run Ansible remediation
+    agent_id: ansible
+    task: Run the remediation playbook from input_data
+    depends_on:
+      - diagnose_system
+    context:
+      # playbook and extra_vars typically come from workflow input_data (merged into step context)
+      playbook: restart_service.yml

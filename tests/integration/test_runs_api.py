@@ -1,6 +1,6 @@
 """Integration tests for runs API (POST /run, GET /runs/:id)."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -78,3 +78,65 @@ class TestRunsAPI:
         """GET /runs/:id returns 404 for unknown run_id."""
         response = client.get("/api/v1/runs/00000000-0000-0000-0000-000000000000")
         assert response.status_code == 404
+
+    def test_stream_run_returns_sse_events(self, client, api_key_disabled):
+        """GET /runs/:id/stream returns SSE stream with status, step, answer, end events."""
+        run_id = "test-run-stream-123"
+        mock_run = MagicMock()
+        mock_run.run_id = run_id
+        mock_run.status = "completed"
+        events_first_call = [
+            (1, "status", {"status": "running"}),
+            (2, "step", {"step_index": 1, "kind": "finish"}),
+            (3, "answer", {"answer": "Done."}),
+        ]
+
+        with patch("app.api.v1.routes.runs.get_run_by_id", return_value=mock_run):
+            with patch("app.api.v1.routes.runs.get_run_events", side_effect=[events_first_call, []]):
+                with client.stream("GET", f"/api/v1/runs/{run_id}/stream") as response:
+                    assert response.status_code == 200
+                    assert "text/event-stream" in response.headers.get("content-type", "")
+                    chunks = list(response.iter_bytes())
+        body = b"".join(chunks).decode("utf-8")
+        assert "event: status" in body
+        assert "event: step" in body
+        assert "event: answer" in body
+        assert "event: end" in body
+        assert "running" in body
+        assert "Done." in body
+
+    def test_stream_run_404_for_unknown_id(self, client, api_key_disabled):
+        """GET /runs/:id/stream returns 404 for unknown run_id."""
+        with patch("app.api.v1.routes.runs.get_run_by_id", return_value=None):
+            response = client.get("/api/v1/runs/00000000-0000-0000-0000-000000000000/stream")
+        assert response.status_code == 404
+
+    def test_post_run_in_process_when_queue_disabled(self, client, api_key_disabled):
+        """When enqueue_run returns False (queue disabled), planner is run via create_task."""
+        with patch("app.api.v1.routes.runs.run_planner_loop", new_callable=AsyncMock) as mock_planner:
+            with patch("app.api.v1.routes.runs.enqueue_run", new_callable=AsyncMock) as mock_enqueue:
+                mock_enqueue.return_value = False
+                with patch("app.api.v1.routes.runs.asyncio.create_task") as mock_create_task:
+                    response = client.post(
+                        "/api/v1/run",
+                        json={"goal": "Simple goal", "agent_profile_id": "default"},
+                    )
+        assert response.status_code == 201
+        mock_enqueue.assert_called_once()
+        mock_create_task.assert_called_once()
+        mock_planner.assert_not_called()
+
+    def test_post_run_enqueued_when_queue_returns_true(self, client, api_key_disabled):
+        """When enqueue_run returns True, planner is not run in-process (worker will run it)."""
+        with patch("app.api.v1.routes.runs.run_planner_loop", new_callable=AsyncMock) as mock_planner:
+            with patch("app.api.v1.routes.runs.enqueue_run", new_callable=AsyncMock) as mock_enqueue:
+                mock_enqueue.return_value = True
+                with patch("app.api.v1.routes.runs.asyncio.create_task") as mock_create_task:
+                    response = client.post(
+                        "/api/v1/run",
+                        json={"goal": "Simple goal", "agent_profile_id": "default"},
+                    )
+        assert response.status_code == 201
+        mock_enqueue.assert_called_once()
+        mock_create_task.assert_not_called()
+        mock_planner.assert_not_called()

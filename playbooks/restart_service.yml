@@ -1,0 +1,21 @@
+# Example Ansible playbook for DEX remediation (restart a service).
+# Usage: pass extra_vars e.g. service_name=nginx (or use inventory + limit).
+# Run locally: ansible-playbook -i inventory.yml restart_service.yml -e "service_name=nginx"
+---
+- name: Restart a service (DEX remediation)
+  hosts: localhost
+  gather_facts: true
+  vars:
+    service_name: "{{ service_name | default('nginx') }}"
+  tasks:
+    - name: Restart service
+      ansible.builtin.service:
+        name: "{{ service_name }}"
+        state: restarted
+      when: ansible_os_family != "Windows"
+
+    - name: Restart Windows service
+      ansible.windows.win_service:
+        name: "{{ service_name }}"
+        state: restarted
+      when: ansible_os_family == "Windows"

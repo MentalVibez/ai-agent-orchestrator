@@ -3,7 +3,7 @@
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
-from threading import Lock
+from threading import RLock
 from typing import Any, Dict, List, Optional
 
 
@@ -44,7 +44,7 @@ class CostTracker:
     def __init__(self):
         """Initialize cost tracker."""
         self._records: List[CostRecord] = []
-        self._lock = Lock()
+        self._lock = RLock()
         self._daily_limits: Dict[str, float] = {}  # Daily cost limits per endpoint/agent
         self._alerts_enabled = True
 

@@ -31,6 +31,7 @@ class TestWorkflowLoader:
             "steps": [
                 {
                     "step_id": "step1",
+                    "name": "Connectivity Check",
                     "agent_id": "network_diagnostics",
                     "task": "Check connectivity",
                     "depends_on": [],
@@ -42,7 +43,7 @@ class TestWorkflowLoader:
         """Test initialization with default directory."""
         loader = WorkflowLoader()
         assert loader.workflows_dir is not None
-        assert loader._workflows == {}
+        assert isinstance(loader._workflows, dict)
 
     def test_initialization_custom_dir(self, temp_workflows_dir):
         """Test initialization with custom directory."""

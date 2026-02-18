@@ -76,7 +76,7 @@ aws cloudformation create-stack \
   --parameters \
     ParameterKey=CodeS3Bucket,ParameterValue=your-lambda-code-bucket \
     ParameterKey=CodeS3Key,ParameterValue=orchestrator-lambda.zip \
-    ParameterKey=CORSOrigins,ParameterValue="https://donsylvester.dev,https://www.donsylvester.dev" \
+    ParameterKey=CORSOrigins,ParameterValue="https://yourdomain.com,https://www.yourdomain.com" \
   --capabilities CAPABILITY_NAMED_IAM \
   --region us-east-1
 
@@ -163,7 +163,7 @@ exports.handler = async (event) => {
     if (orchestratorResult && orchestratorResult.useOrchestrator) {
       return {
         statusCode: 200,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://donsylvester.dev" },
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "https://yourdomain.com" },
         body: JSON.stringify({
           success: true,
           answer: orchestratorResult.result.message,
@@ -220,15 +220,15 @@ ORCHESTRATOR_ENDPOINT=$(aws cloudformation describe-stacks \
 ### Option 2: Use API Gateway Custom Domain
 
 ```bash
-# Request ACM certificate for api.donsylvester.dev
+# Request ACM certificate for api.yourdomain.com
 aws acm request-certificate \
-  --domain-name api.donsylvester.dev \
+  --domain-name api.yourdomain.com \
   --validation-method DNS \
   --region us-east-1
 
 # Create custom domain in API Gateway
 aws apigateway create-domain-name \
-  --domain-name api.donsylvester.dev \
+  --domain-name api.yourdomain.com \
   --certificate-arn <certificate-arn> \
   --endpoint-configuration types=REGIONAL
 ```
@@ -301,7 +301,7 @@ Change from `"*"` to specific origin:
 
 ```javascript
 headers: {
-  "Access-Control-Allow-Origin": "https://donsylvester.dev",
+  "Access-Control-Allow-Origin": "https://yourdomain.com",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, X-API-Key"
 }

@@ -6,6 +6,16 @@ Thank you for your interest in contributing to AI Agent Orchestrator! This docum
 
 This project adheres to a Code of Conduct. By participating, you are expected to uphold this code.
 
+## Privacy and PII
+
+Do **not** commit personally identifiable information (PII) or machine-specific paths:
+
+- **Paths**: Use generic placeholders (e.g. `C:\Users\YourUsername\Documents`) in examples and config comments—never your real home path or username.
+- **Secrets**: Never commit API keys, passwords, or tokens; use `.env` (gitignored) and document variables in `.env.example`.
+- **Test output**: Pytest log files (`pytest_output.txt`, etc.) often contain local paths and usernames; keep them gitignored and do not add them to the repo.
+
+Before opening a PR, scan for your username, full paths, and any credentials in changed files.
+
 ## How to Contribute
 
 ### Reporting Bugs

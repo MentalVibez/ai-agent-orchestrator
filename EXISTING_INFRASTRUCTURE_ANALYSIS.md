@@ -215,7 +215,7 @@ PortfolioChatbotUsagePlan:
 **Solution:** Use specific origins
 ```javascript
 headers: {
-  "Access-Control-Allow-Origin": "https://donsylvester.dev",
+  "Access-Control-Allow-Origin": "https://yourdomain.com",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, X-API-Key"
 }

@@ -11,7 +11,7 @@ data:
   LOG_LEVEL: "INFO"
   HOST: "0.0.0.0"
   PORT: "8000"
-  CORS_ORIGINS: "https://donsylvester.dev,https://www.donsylvester.dev"
+  CORS_ORIGINS: "https://yourdomain.com,https://www.yourdomain.com"
   LLM_PROVIDER: "bedrock"
   LLM_MODEL: "anthropic.claude-3-haiku-20240307-v1:0"
   LLM_TEMPERATURE: "0.7"

@@ -1,5 +1,7 @@
 """Unit tests for Orchestrator."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from app.core.agent_registry import AgentRegistry
@@ -64,7 +66,7 @@ class TestOrchestrator:
         orchestrator.agent_registry.register(network_agent)
 
         results = await orchestrator.coordinate_agents(
-            ["network_diagnostics"], "Check network connectivity"
+            ["network_diagnostics"], "Check network connectivity to example.com"
         )
 
         assert len(results) == 1
@@ -80,7 +82,7 @@ class TestOrchestrator:
 
         # Register same agent twice to simulate multiple agents
         results = await orchestrator.coordinate_agents(
-            ["network_diagnostics", "network_diagnostics"], "Check network connectivity"
+            ["network_diagnostics", "network_diagnostics"], "Check network connectivity to example.com"
         )
 
         assert len(results) == 2
@@ -102,10 +104,70 @@ class TestOrchestrator:
         """Test that coordinate_agents passes context between agents."""
         orchestrator.agent_registry.register(network_agent)
 
-        context = {"test": "value"}
+        context = {"test": "value", "host": "example.com"}
         results = await orchestrator.coordinate_agents(
             ["network_diagnostics"], "test task", context=context
         )
 
         assert len(results) == 1
         assert results[0].success is True
+
+    @pytest.mark.asyncio
+    async def test_coordinate_agents_parallel_true(
+        self, orchestrator: Orchestrator, network_agent
+    ):
+        """Test coordinate_agents with parallel=True runs agents concurrently (no previous_results)."""
+        orchestrator.agent_registry.register(network_agent)
+
+        results = await orchestrator.coordinate_agents(
+            ["network_diagnostics", "network_diagnostics"],
+            "Check network connectivity to example.com",
+            parallel=True,
+        )
+
+        assert len(results) == 2
+        assert all(r.success for r in results)
+        assert all(r.agent_id == "network_diagnostics" for r in results)
+
+    @pytest.mark.asyncio
+    async def test_route_task_llm_routing_selects_agent(
+        self, orchestrator: Orchestrator, network_agent
+    ):
+        """When USE_LLM_ROUTING=true and LLM returns valid agent_id, that agent is used."""
+        orchestrator.agent_registry.register(network_agent)
+        mock_llm = MagicMock()
+        mock_llm.generate = AsyncMock(return_value='{"agent_id": "network_diagnostics"}')
+        orchestrator._llm_manager = MagicMock()
+        orchestrator._llm_manager.get_provider = MagicMock(return_value=mock_llm)
+
+        with patch("app.core.config.settings") as mock_settings:
+            mock_settings.use_llm_routing = True
+            mock_settings.llm_routing_timeout_seconds = 10
+            result = await orchestrator.route_task(
+                "Check network connectivity to example.com",
+                context={"hostname": "example.com"},
+            )
+
+        assert result.agent_id == "network_diagnostics"
+        mock_llm.generate.assert_called_once()
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_route_task_llm_routing_fallback_on_invalid_agent(
+        self, orchestrator: Orchestrator, network_agent
+    ):
+        """When USE_LLM_ROUTING=true but LLM returns unknown agent_id, fall back to keyword."""
+        orchestrator.agent_registry.register(network_agent)
+        mock_llm = MagicMock()
+        mock_llm.generate = AsyncMock(return_value='{"agent_id": "nonexistent_agent"}')
+        orchestrator._llm_manager = MagicMock()
+        orchestrator._llm_manager.get_provider = MagicMock(return_value=mock_llm)
+
+        with patch("app.core.config.settings") as mock_settings:
+            mock_settings.use_llm_routing = True
+            mock_settings.llm_routing_timeout_seconds = 10
+            result = await orchestrator.route_task("Check network connectivity to example.com")
+
+        assert result.success is True
+        assert result.agent_id == "network_diagnostics"
+        mock_llm.generate.assert_called_once()

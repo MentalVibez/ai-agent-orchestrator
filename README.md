@@ -1,8 +1,8 @@
 # AI Agent Orchestrator
 
-A multi-agent backend system that coordinates specialized LLM-powered agents to handle complex IT diagnostics and engineering workflows through a single HTTP API. **Now with MCP (Model Context Protocol)**: register MCP servers, define agent profiles, and run goal-based workflows that compose tools from multiple MCP servers (or fall back to legacy agents when no MCP tools are configured).
+A multi-agent backend system that coordinates specialized LLM-powered agents to handle complex IT diagnostics and engineering workflows through a single HTTP API. **Now with MCP (Model Context Protocol)**: register MCP servers, define agent profiles, and run goal-based workflows that compose tools from multiple MCP servers — with native LLM tool calling, RAG, multi-agent messaging, and full observability.
 
-> **Production-Ready System**: Fully functional with 7 active agents, 3 LLM providers (Bedrock, OpenAI, Ollama), MCP client layer, SQLite persistence, Docker deployment, and a comprehensive test suite at 70%+ coverage.
+> **Production-Ready System**: 7 active agents · 3 LLM providers (Bedrock, OpenAI, Ollama) · Native tool calling (Bedrock Converse API + OpenAI) · RAG via ChromaDB · SQLite/PostgreSQL persistence · Docker deployment · 371 tests passing.
 
 ---
 
@@ -61,12 +61,17 @@ Once running:
 
 ### Core Components
 
-- **Orchestrator** — routes tasks to appropriate agents; coordinates multi-agent workflows
-- **Agent Registry** — manages all registered agents and their capabilities
-- **Workflow Executor** — executes multi-step workflows with parallel step support
-- **LLM Manager** — handles provider selection, initialization, and fallback
-- **Planner Loop** — MCP-centric goal executor: LLM chooses tools iteratively until done
-- **MCP Client Manager** — connects to stdio MCP servers, discovers tools
+| Component | File | Role |
+|-----------|------|------|
+| Orchestrator | `app/core/orchestrator.py` | Routes tasks to agents; coordinates workflows |
+| Planner Loop | `app/planner/loop.py` | MCP-centric goal executor with checkpointing |
+| MCP Client Manager | `app/mcp/client_manager.py` | Connects to stdio + HTTP SSE MCP servers |
+| Workflow Executor | `app/core/workflow_executor.py` | DAG execution with conditional edges |
+| LLM Manager | `app/llm/manager.py` | Provider selection, init, and fallback |
+| RAG Manager | `app/core/rag_manager.py` | ChromaDB-backed document indexing and search |
+| Agent Message Bus | `app/core/agent_bus.py` | asyncio.Queue peer-to-peer messaging |
+| Agent Memory | `app/core/agent_memory.py` | DB-backed session state per agent/run |
+| Cost Tracker | `app/core/cost_tracker.py` | Token usage analytics, persisted to DB |
 
 ### Agents (7 active)
 
@@ -82,25 +87,99 @@ Once running:
 
 ### LLM Providers (3 implemented)
 
-| Provider | When to use | Cost |
-|----------|-------------|------|
-| **AWS Bedrock** | Production / cloud | ~$0.001 per request (Claude Haiku) |
-| **OpenAI** | GPT-4o alternative | Pay-per-token |
-| **Ollama** | Local / self-hosted | **Free** |
+| Provider | Tool Calling | When to use | Cost |
+|----------|-------------|-------------|------|
+| **AWS Bedrock** | ✅ Converse API | Production / cloud | ~$0.001/request (Claude Haiku) |
+| **OpenAI** | ✅ `tools` parameter | GPT-4o alternative | Pay-per-token |
+| **Ollama** | Text fallback | Local / self-hosted | **Free** |
 
 Set `LLM_PROVIDER=bedrock`, `openai`, or `ollama` in `.env`.
+
+> **Native tool calling**: Bedrock uses the Converse API with `toolConfig`; OpenAI uses the `tools` parameter. Both map MCP tool schemas automatically via `app/llm/tool_schema.py`. Ollama falls back to JSON text parsing.
 
 ### MCP-Centric Runs
 
 - **Agent Profiles** — defined in `config/agent_profiles.yaml` (role prompt + allowed MCP servers)
-- **Planner Loop** — for a run, the LLM picks tools iteratively until FINISH. Falls back to legacy orchestrator if no MCP tools are configured.
+- **Planner Loop** — LLM picks tools iteratively until FINISH. Falls back to legacy orchestrator if no MCP tools are configured.
+- **Checkpointing** — `checkpoint_step_index` saved to DB after each tool call. If the planner crashes mid-run, `resume_planner_loop` skips already-completed steps.
 - **Runs API** — `POST /api/v1/run` → returns `run_id`. Poll `GET /api/v1/runs/{run_id}` for status, steps, and final answer; or stream progress via `GET /api/v1/runs/{run_id}/stream` (SSE).
 
 See **[docs/ORCHESTRATION.md](docs/ORCHESTRATION.md)** for when to use `POST /run` vs `POST /orchestrate`, when the planner falls back to legacy agents, and what `agent_profile_id` controls.
 
-**Run queue (optional):** Set `RUN_QUEUE_URL=redis://localhost:6379` to enqueue runs instead of running the planner in-process. Then start a worker (same env, e.g. `DATABASE_URL`, `LLM_PROVIDER`) with: `RUN_QUEUE_URL=redis://localhost:6379 arq app.worker.WorkerSettings`. Requires `pip install arq`. SSE (`GET /runs/{id}/stream`) still works because events are stored in the DB.
+**Run queue (optional):** Set `RUN_QUEUE_URL=redis://localhost:6379` to enqueue runs instead of running the planner in-process. Then start a worker with: `RUN_QUEUE_URL=redis://localhost:6379 arq app.worker.WorkerSettings`. Requires `pip install arq`. SSE (`GET /runs/{id}/stream`) still works because events are stored in the DB.
 
-**Human-in-the-loop (HITL):** In `config/agent_profiles.yaml`, set `approval_required_tools: [tool_name, ...]` on a profile. When the planner is about to run one of those tools, the run status becomes `awaiting_approval` and the tool is not executed until approved. `GET /api/v1/runs/{run_id}` returns `pending_approval: { server_id, tool_name, arguments, step_index }`. Send `POST /api/v1/runs/{run_id}/approve` with body `{"approved": true}` (or `{"approved": false}` to reject), and optionally `modified_arguments: {...}` to override arguments when approving. After approval, the tool runs and the planner resumes.
+**Human-in-the-loop (HITL):** In `config/agent_profiles.yaml`, set `approval_required_tools: [tool_name, ...]` on a profile. When the planner is about to run one of those tools, the run status becomes `awaiting_approval`. Send `POST /api/v1/runs/{run_id}/approve` with `{"approved": true}` and optionally `modified_arguments: {...}` to override arguments. After approval, the tool runs and the planner resumes.
+
+### MCP Transport Support
+
+Both **stdio** and **HTTP SSE** transports are supported:
+
+```yaml
+# config/mcp_servers.yaml
+mcp_servers:
+  my_local_server:
+    transport: stdio
+    command: npx
+    args: ["-y", "@my/mcp-server"]
+
+  my_http_server:
+    transport: sse
+    url: http://localhost:8001/sse
+    name: My HTTP MCP Server
+```
+
+---
+
+## RAG (Retrieval-Augmented Generation)
+
+Built-in semantic search powered by ChromaDB. Install the optional dependency with:
+
+```bash
+pip install chromadb>=0.4
+```
+
+If ChromaDB is not installed, RAG endpoints return `503 Service Unavailable` — the rest of the API is unaffected.
+
+### RAG API
+
+```http
+# Index a document
+POST /api/v1/rag/index
+{
+  "collection": "my_docs",
+  "document_id": "doc-001",
+  "text": "The nginx service is configured on port 443...",
+  "metadata": {"source": "runbook", "team": "ops"}
+}
+
+# Semantic search
+POST /api/v1/rag/search
+{
+  "collection": "my_docs",
+  "query": "nginx configuration",
+  "n_results": 5
+}
+
+# Delete a collection
+DELETE /api/v1/rag/collection/{collection_name}
+
+# List all collections
+GET /api/v1/collections
+```
+
+---
+
+## Multi-Agent Communication
+
+Agents can send and receive messages via an in-process asyncio.Queue message bus:
+
+```python
+# From within any agent subclass:
+await self.send_to_agent("target_agent_id", {"action": "diagnose", "host": "10.0.0.1"})
+
+# In the target agent:
+msg = await self.receive_from_agent(timeout=5.0)
+```
 
 ---
 
@@ -130,19 +209,18 @@ Key variables (see `.env.example` for full list):
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `llama3.2` | Ollama model name |
 | `DEBUG` | `false` | Enables Swagger UI (`/docs`) and verbose errors |
-| `DATABASE_URL` | `sqlite:////app/data/orchestrator.db` | SQLite (default) or PostgreSQL URL; for multi-instance/high concurrency use PostgreSQL |
+| `DATABASE_URL` | `sqlite:////app/data/orchestrator.db` | SQLite (default) or PostgreSQL URL |
 | `CORS_ORIGINS` | `https://yourdomain.com,...` | Comma-separated allowed origins |
 | `WEBHOOK_SECRET` | | HMAC secret for Prometheus webhook (leave blank = unauthenticated) |
-| `USE_LLM_ROUTING` | `false` | If `true`, `POST /orchestrate` uses LLM to pick agent; else keyword-based |
-| `LLM_ROUTING_TIMEOUT_SECONDS` | `10` | Timeout for LLM routing call (fallback to keyword on timeout/failure) |
-| `RUN_QUEUE_URL` | *(empty)* | When set (e.g. `redis://localhost:6379`), runs are enqueued; start worker with `arq app.worker.WorkerSettings` |
-| `OTEL_ENABLED` | `false` | When `true`, trace runs and planner steps/tool calls via OpenTelemetry (OTLP) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | *(empty)* | OTLP endpoint for traces (e.g. `http://localhost:4318/v1/traces`). Empty = SDK default |
+| `USE_LLM_ROUTING` | `false` | If `true`, `POST /orchestrate` uses LLM to pick agent |
+| `RUN_QUEUE_URL` | *(empty)* | Redis URL for async run queue; start worker with `arq app.worker.WorkerSettings` |
+| `OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing (GenAI semantic conventions) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | *(empty)* | OTLP endpoint (e.g. `http://localhost:4318/v1/traces`) |
 
 ### Database (SQLite and PostgreSQL)
 
-- **SQLite** (default): single-file DB; fine for local dev and single-instance. Set `DATABASE_URL=sqlite:///./orchestrator.db` for a file in the project folder. The app creates tables on startup if they don't exist (`init_db()`).
-- **PostgreSQL**: supported for production and multi-instance (e.g. with run-queue workers). Set `DATABASE_URL=postgresql://user:pass@host:5432/dbname`. Create tables with **Alembic**: run `alembic upgrade head` before starting the app (and workers). Migrations live in `alembic/versions/`.
+- **SQLite** (default): single-file DB; fine for local dev and single-instance. Set `DATABASE_URL=sqlite:///./orchestrator.db` for a file in the project folder. The app creates tables on startup via `init_db()`.
+- **PostgreSQL**: supported for production and multi-instance. Set `DATABASE_URL=postgresql://user:pass@host:5432/dbname`. Create tables with **Alembic**: run `alembic upgrade head` before starting the app. Migrations live in `alembic/versions/`.
 
 ---
 
@@ -196,22 +274,32 @@ Returns status, steps, tool calls, and `answer` when complete.
 GET /api/v1/runs/{run_id}/stream
 ```
 
-Server-Sent Events stream: `status`, `step`, `answer`, and `end` when the run finishes. If the run was started with `stream_tokens: true` in the body of `POST /run`, event type `token` carries LLM output chunks. Best-effort; use `GET /api/v1/runs/{run_id}` for authoritative final state.
+Server-Sent Events stream: `status`, `step`, `answer`, `token` (when `stream_tokens: true`), and `end` when the run finishes.
 
-### Other Endpoints
+### Full Endpoint Reference
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/v1/runs/{run_id}/stream` | SSE stream of run progress (status, step, answer) |
-| `POST /api/v1/runs/{run_id}/approve` | HITL: approve or reject pending tool call (body: `approved`, optional `modified_arguments`) |
+| `GET /api/v1/health` | Health check (DB, agents, LLM status) |
+| `POST /api/v1/run` | Start a goal-based MCP run |
+| `GET /api/v1/runs` | List runs (filter by status) |
+| `GET /api/v1/runs/{run_id}` | Get run status, steps, answer |
+| `GET /api/v1/runs/{run_id}/stream` | SSE stream of run progress |
+| `POST /api/v1/runs/{run_id}/approve` | HITL: approve/reject pending tool call |
+| `DELETE /api/v1/runs/{run_id}` | Cancel a run |
+| `POST /api/v1/orchestrate` | Legacy multi-agent orchestration |
 | `GET /api/v1/agents` | List all agents |
 | `GET /api/v1/agents/{id}` | Agent details |
-| `POST /api/v1/workflows` | Execute a workflow |
-| `GET /api/v1/metrics/costs` | Cost analytics |
+| `POST /api/v1/workflows` | Execute a YAML workflow |
+| `GET /api/v1/metrics/costs` | LLM cost analytics |
 | `GET /api/v1/agent-profiles` | List MCP agent profiles |
 | `GET /api/v1/mcp/servers` | List connected MCP servers |
+| `POST /api/v1/rag/index` | Index a document into ChromaDB |
+| `POST /api/v1/rag/search` | Semantic search over a collection |
+| `DELETE /api/v1/rag/collection/{name}` | Delete a ChromaDB collection |
+| `GET /api/v1/rag/collections` | List all collections |
 | `POST /api/v1/webhooks/prometheus` | Alertmanager webhook |
-| `GET /metrics` | Prometheus scrape (auth required) |
+| `GET /metrics` | Prometheus scrape endpoint (auth required) |
 
 **Prometheus scrape config** — add `X-API-Key` header to your Prometheus job:
 ```yaml
@@ -219,7 +307,6 @@ scrape_configs:
   - job_name: orchestrator
     static_configs:
       - targets: ["localhost:8000"]
-    params: {}
     authorization:
       type: Bearer
       credentials_file: /etc/prometheus/api_key
@@ -253,6 +340,47 @@ while True:
 print(run.get("answer"))
 ```
 
+### RAG: index and search
+
+```python
+# Index a runbook
+requests.post(
+    "http://localhost:8000/api/v1/rag/index",
+    headers={"X-API-Key": "your-api-key"},
+    json={
+        "collection": "runbooks",
+        "document_id": "nginx-restart",
+        "text": "To restart nginx: systemctl restart nginx. Check status with systemctl status nginx.",
+        "metadata": {"service": "nginx", "team": "ops"},
+    },
+)
+
+# Semantic search
+results = requests.post(
+    "http://localhost:8000/api/v1/rag/search",
+    headers={"X-API-Key": "your-api-key"},
+    json={"collection": "runbooks", "query": "how to restart a web server", "n_results": 3},
+).json()
+```
+
+### Conditional workflow (YAML)
+
+```yaml
+# Workflow with conditional step — remediate only if diagnosis finds an issue
+steps:
+  - step_id: diagnose
+    name: Diagnose Network
+    agent_id: network_diagnostics
+    task: "Check connectivity to 10.0.0.1"
+
+  - step_id: remediate
+    name: Run Remediation
+    agent_id: ansible
+    task: "Restart network service"
+    depends_on: [diagnose]
+    condition: "context.get('is_error') == True"
+```
+
 ### Specific agent (osquery)
 
 ```python
@@ -267,23 +395,6 @@ requests.post(
 )
 ```
 
-### Run an Ansible playbook
-
-```python
-requests.post(
-    "http://localhost:8000/api/v1/orchestrate",
-    headers={"X-API-Key": "your-api-key"},
-    json={
-        "task": "Restart nginx service",
-        "agent_ids": ["ansible"],
-        "context": {
-            "playbook": "restart_service.yml",
-            "extra_vars": {"service_name": "nginx"},
-        },
-    },
-)
-```
-
 ---
 
 ## Project Structure
@@ -291,35 +402,62 @@ requests.post(
 ```
 ai-agent-orchestrator/
 ├── app/
-│   ├── main.py                   # FastAPI entry point
-│   ├── api/v1/routes/            # Route handlers
+│   ├── main.py                    # FastAPI entry point + lifespan
+│   ├── api/v1/routes/
+│   │   ├── runs.py                # Run lifecycle (create, poll, SSE, approve)
+│   │   ├── rag.py                 # RAG endpoints (index, search, collections)
+│   │   ├── orchestrator.py        # Legacy orchestrate endpoint
+│   │   ├── agents.py              # Agent listing
+│   │   ├── metrics.py             # Cost and metrics APIs
+│   │   └── webhooks.py            # Prometheus Alertmanager webhook
 │   ├── core/
-│   │   ├── auth.py               # API key auth (timing-safe)
-│   │   ├── config.py             # Settings (pydantic-settings)
-│   │   ├── orchestrator.py       # Task routing
-│   │   ├── services.py           # Dependency injection / service container
-│   │   ├── workflow_executor.py  # Parallel workflow execution
-│   │   └── prompt_injection.py   # Input sanitization
-│   ├── planner/loop.py           # MCP planner loop
-│   ├── mcp/                      # MCP client layer
-│   ├── agents/                   # 7 agent implementations
-│   ├── llm/                      # Bedrock, OpenAI, Ollama providers
-│   ├── db/                       # SQLAlchemy models + migrations
-│   └── models/                   # Pydantic request/response models
+│   │   ├── run_store.py           # Async DB wrappers for runs/events
+│   │   ├── persistence.py         # Async DB wrappers for history/state
+│   │   ├── agent_memory.py        # DB-backed agent session memory
+│   │   ├── agent_bus.py           # Multi-agent asyncio.Queue message bus
+│   │   ├── rag_manager.py         # ChromaDB RAG integration
+│   │   ├── cost_tracker.py        # Token cost tracking (persisted to DB)
+│   │   ├── workflow_executor.py   # DAG execution + conditional edges
+│   │   ├── orchestrator.py        # Task routing
+│   │   ├── sandbox.py             # Async tool timeout (asyncio.wait_for)
+│   │   ├── auth.py                # API key auth (timing-safe)
+│   │   ├── config.py              # Settings (pydantic-settings)
+│   │   └── prompt_injection.py    # Input sanitization
+│   ├── planner/loop.py            # MCP planner loop + HITL + checkpointing
+│   ├── mcp/
+│   │   ├── client_manager.py      # stdio + HTTP SSE MCP transport
+│   │   └── config_loader.py       # Agent profile loader
+│   ├── agents/
+│   │   ├── base.py                # BaseAgent (tool use, memory, messaging)
+│   │   └── ...                    # 7 agent implementations
+│   ├── llm/
+│   │   ├── tool_schema.py         # MCP → Bedrock/OpenAI tool schema converter
+│   │   ├── bedrock.py             # Bedrock Converse API + native tool calling
+│   │   ├── openai.py              # OpenAI tools parameter + native tool calling
+│   │   ├── ollama.py              # Ollama (text fallback for tool calls)
+│   │   └── base.py                # Abstract LLMProvider interface
+│   ├── db/
+│   │   ├── models.py              # Run, RunEvent, CostRecordDB, AgentState, ...
+│   │   └── database.py            # SQLAlchemy engine + SessionLocal
+│   ├── observability/
+│   │   └── tracing.py             # OTel tracing + GenAI semantic conventions
+│   ├── models/
+│   │   └── workflow.py            # WorkflowStep (with condition field)
+│   └── worker.py                  # arq worker for Redis run queue
 ├── config/
 │   ├── agents.yaml
-│   ├── mcp_servers.yaml          # MCP server definitions
-│   └── agent_profiles.yaml       # Agent profiles (role + allowed tools)
-├── playbooks/                    # Ansible playbooks
+│   ├── mcp_servers.yaml           # stdio + SSE MCP server definitions
+│   └── agent_profiles.yaml        # Agent profiles (role + allowed tools + HITL)
+├── playbooks/                     # Ansible playbooks
 ├── scripts/
-│   └── setup.sh                  # Interactive setup wizard
+│   └── setup.sh                   # Interactive setup wizard
 ├── tests/
-│   ├── unit/                     # 70%+ coverage
-│   └── integration/
-├── .env.example                  # Environment template
-├── Dockerfile                    # Node.js 20 + Python 3.11
-├── docker-compose.yml            # With named volume for SQLite persistence
-└── alembic/                      # DB migrations
+│   ├── unit/                      # 350+ unit tests
+│   └── integration/               # 21 integration tests
+├── .env.example                   # Environment template
+├── Dockerfile                     # Node.js 20 + Python 3.11
+├── docker-compose.yml             # With named volume for SQLite persistence
+└── alembic/                       # DB migrations
 ```
 
 ---
@@ -332,6 +470,7 @@ This project has undergone a security audit. Key measures in place:
 - **Rate limiting** — `slowapi` on all endpoints including `/metrics`
 - **No shell injection** — all subprocess calls use argument lists, never `shell=True`
 - **Input validation** — hostname, service name, playbook name, SQL keyword blocklist all validated via strict regex
+- **Prompt injection filter** — all user-controlled strings sanitized before reaching the LLM
 - **No exception leakage** — raw exception messages never exposed in HTTP responses
 - **Security headers** — `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, HSTS (HTTPS only), CSP
 - **CORS** — narrowed to specific methods (`GET`, `POST`, `DELETE`) and headers (`X-API-Key`, `Content-Type`, `Accept`)
@@ -342,11 +481,29 @@ See [SECURITY.md](SECURITY.md) for full details.
 
 ---
 
+## Observability
+
+When `OTEL_ENABLED=true`, the orchestrator emits OpenTelemetry traces using the **GenAI semantic conventions**:
+
+| Attribute | Value |
+|-----------|-------|
+| `gen_ai.system` | `anthropic` / `openai` / `ollama` |
+| `gen_ai.request.model` | Model ID (e.g. `anthropic.claude-3-haiku-...`) |
+| `gen_ai.usage.input_tokens` | Input token count |
+| `gen_ai.usage.output_tokens` | Output token count |
+
+Traces cover full run lifecycles (`trace_run`), individual planner steps (`trace_step`), and tool calls (`trace_tool_call`). Export to any OTLP-compatible backend (Jaeger, Grafana Tempo, Honeycomb, etc.) via `OTEL_EXPORTER_OTLP_ENDPOINT`.
+
+---
+
 ## Testing
 
 ```bash
-# Run full test suite with coverage
-python -m pytest tests/ -v --tb=short --cov=app --cov-report=term-missing
+# Run full test suite (371 tests)
+python -m pytest tests/ -v --tb=short --no-cov
+
+# Run with coverage report
+python -m pytest tests/ --cov=app --cov-report=term-missing
 
 # Lint
 python -m ruff check app/ tests/
@@ -365,6 +522,7 @@ pip install pip-audit && pip-audit
 | LLM — AWS Bedrock Claude Haiku | ~$0.001/request |
 | osquery + Prometheus + Grafana + Ansible | **$0** |
 | SQLite (built-in) | **$0** |
+| ChromaDB RAG (local, in-memory) | **$0** |
 | Self-hosted (8 GB RAM PC) | **$0** |
 | Cloud VPS (Hetzner CX22) | ~$5–6/month |
 
@@ -381,18 +539,24 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## Current Status
 
-**All core functionality implemented and tested.**
+**All features implemented and 371 tests passing.**
 
 | Area | Status |
 |------|--------|
 | Agents | ✅ 7/7 (Network, System, Code Review, Log Analysis, Infrastructure, Osquery, Ansible) |
-| LLM Providers | ✅ 3/3 (Bedrock, OpenAI, Ollama) |
-| MCP client + planner | ✅ Complete |
-| Runs API | ✅ Complete |
-| Workflows | ✅ Complete |
-| Security (auth, rate limit, injection) | ✅ Audited and hardened |
+| LLM Providers | ✅ 3/3 — native tool calling on Bedrock + OpenAI; text fallback on Ollama |
+| MCP transport | ✅ stdio + HTTP SSE |
+| Planner + HITL | ✅ Complete — with crash-safe checkpointing |
+| RAG (ChromaDB) | ✅ Optional — `/api/v1/rag/*` endpoints |
+| Multi-agent messaging | ✅ asyncio.Queue message bus |
+| Async DB layer | ✅ All DB calls non-blocking (`asyncio.to_thread`) |
+| Conditional workflows | ✅ Python expression edges on workflow steps |
+| Cost tracking | ✅ In-memory + DB-persisted (`CostRecordDB`) |
+| Agent session memory | ✅ DB-backed per agent/run |
+| OTel observability | ✅ GenAI semantic conventions |
+| Security | ✅ Audited and hardened |
 | Docker + persistence | ✅ Named volume for SQLite |
-| Test coverage | ✅ 70%+ |
+| Tests | ✅ 371 passing |
 
 ---
 

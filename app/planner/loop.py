@@ -115,7 +115,7 @@ async def _run_planner_steps(
     if approval_required_tools is None:
         approval_required_tools = []
     for step in range(start_step, MAX_PLANNER_STEPS + 1):
-        run = get_run_by_id(run_id)
+        run = await get_run_by_id(run_id)
         if run and run.status == "cancelled":
             logger.info("Run %s was cancelled", run_id)
             return
@@ -148,7 +148,7 @@ Respond with exactly one JSON object, no other text. Choose one:
                 full: List[str] = []
                 try:
                     async for chunk in llm.stream(user_prompt, system_prompt=system):
-                        append_run_event(run_id, "token", {"text": chunk})
+                        await append_run_event(run_id, "token", {"text": chunk})
                         full.append(chunk)
                     return "".join(full)
                 except Exception as e:
@@ -167,14 +167,14 @@ Respond with exactly one JSON object, no other text. Choose one:
                     response = await _get_llm_response()
             except asyncio.TimeoutError as e:
                 logger.exception("Planner LLM call timed out after %ss: %s", llm_timeout, e)
-                update_run(
+                await update_run(
                     run_id,
                     status="failed",
                     error=f"LLM call timed out after {llm_timeout}s",
                     steps=steps,
                     tool_calls=tool_calls_records,
                 )
-                append_run_event(
+                await append_run_event(
                     run_id,
                     "status",
                     {"status": "failed", "error": f"LLM call timed out after {llm_timeout}s"},
@@ -182,14 +182,14 @@ Respond with exactly one JSON object, no other text. Choose one:
                 return
             except Exception as e:
                 logger.exception("Planner LLM call failed: %s", e)
-                update_run(
+                await update_run(
                     run_id,
                     status="failed",
                     error=str(e),
                     steps=steps,
                     tool_calls=tool_calls_records,
                 )
-                append_run_event(run_id, "status", {"status": "failed", "error": str(e)})
+                await append_run_event(run_id, "status", {"status": "failed", "error": str(e)})
                 return
 
             parsed = _parse_planner_response(response)
@@ -197,7 +197,7 @@ Respond with exactly one JSON object, no other text. Choose one:
                 conversation.append(f"Step {step} (parse failed): {response[:500]}")
                 step_data = {"step_index": step, "kind": "unknown", "raw_response": response[:500]}
                 steps.append(step_data)
-                append_run_event(run_id, "step", step_data)
+                await append_run_event(run_id, "step", step_data)
                 continue
 
             if parsed.get("action") == "finish":
@@ -209,7 +209,7 @@ Respond with exactly one JSON object, no other text. Choose one:
                     "raw_response": response[:300],
                 }
                 steps.append(step_data)
-                update_run(
+                await update_run(
                     run_id,
                     status="completed",
                     answer=answer,
@@ -217,9 +217,9 @@ Respond with exactly one JSON object, no other text. Choose one:
                     tool_calls=tool_calls_records,
                     completed_at=datetime.utcnow(),
                 )
-                append_run_event(run_id, "step", step_data)
-                append_run_event(run_id, "status", {"status": "completed"})
-                append_run_event(run_id, "answer", {"answer": answer})
+                await append_run_event(run_id, "step", step_data)
+                await append_run_event(run_id, "status", {"status": "completed"})
+                await append_run_event(run_id, "answer", {"answer": answer})
                 return
 
             if parsed.get("action") == "tool_call":
@@ -233,14 +233,14 @@ Respond with exactly one JSON object, no other text. Choose one:
                         "arguments": arguments,
                         "step_index": step,
                     }
-                    update_run(
+                    await update_run(
                         run_id,
                         status="awaiting_approval",
                         steps=steps,
                         tool_calls=tool_calls_records,
                         pending_tool_call=pending,
                     )
-                    append_run_event(
+                    await append_run_event(
                         run_id,
                         "status",
                         {"status": "awaiting_approval", "pending_tool_call": pending},
@@ -283,7 +283,14 @@ Respond with exactly one JSON object, no other text. Choose one:
                     "raw_response": response[:300],
                 }
                 steps.append(step_data)
-                append_run_event(run_id, "step", step_data)
+                await append_run_event(run_id, "step", step_data)
+                # Checkpoint: persist step index so resume can skip completed steps
+                await update_run(
+                    run_id,
+                    checkpoint_step_index=step,
+                    steps=steps,
+                    tool_calls=tool_calls_records,
+                )
                 conversation.append(f"Tool call: {server_id}/{tool_name} -> {result_text[:300]}")
                 if is_error:
                     conversation.append(
@@ -291,7 +298,7 @@ Respond with exactly one JSON object, no other text. Choose one:
                     )
 
     answer_max = "Reached maximum steps without explicit finish."
-    update_run(
+    await update_run(
         run_id,
         status="completed",
         answer=answer_max,
@@ -299,8 +306,8 @@ Respond with exactly one JSON object, no other text. Choose one:
         tool_calls=tool_calls_records,
         completed_at=datetime.utcnow(),
     )
-    append_run_event(run_id, "status", {"status": "completed"})
-    append_run_event(run_id, "answer", {"answer": answer_max})
+    await append_run_event(run_id, "status", {"status": "completed"})
+    await append_run_event(run_id, "answer", {"answer": answer_max})
 
 
 async def run_planner_loop(
@@ -367,7 +374,7 @@ async def run_planner_loop(
             )
         else:
             answer = result.error or "Orchestrator did not return a result."
-        update_run(
+        await update_run(
             run_id,
             status="completed",
             answer=answer,
@@ -382,12 +389,12 @@ async def run_planner_loop(
             tool_calls=[],
             completed_at=datetime.utcnow(),
         )
-        append_run_event(run_id, "status", {"status": "completed"})
-        append_run_event(run_id, "answer", {"answer": answer})
+        await append_run_event(run_id, "status", {"status": "completed"})
+        await append_run_event(run_id, "answer", {"answer": answer})
         return
 
-    update_run(run_id, status="running")
-    append_run_event(run_id, "status", {"status": "running"})
+    await update_run(run_id, status="running")
+    await append_run_event(run_id, "status", {"status": "running"})
     steps: List[Dict[str, Any]] = []
     tool_calls_records: List[Dict[str, Any]] = []
     conversation: List[str] = []
@@ -423,7 +430,7 @@ async def execute_approved_tool_and_update_run(
     Execute the pending tool call (with optional modified_arguments), append to run steps/tool_calls,
     clear pending_tool_call, set status running. Returns True on success.
     """
-    run = get_run_by_id(run_id)
+    run = await get_run_by_id(run_id)
     if not run or run.status != "awaiting_approval" or not run.pending_tool_call:
         return False
     pending = run.pending_tool_call
@@ -470,15 +477,15 @@ async def execute_approved_tool_and_update_run(
     tool_calls_new = list(run.tool_calls or [])
     steps_new.append(step_data)
     tool_calls_new.append(tool_call_record)
-    update_run(
+    await update_run(
         run_id,
         status="running",
         steps=steps_new,
         tool_calls=tool_calls_new,
         _clear_pending_tool_call=True,
     )
-    append_run_event(run_id, "step", step_data)
-    append_run_event(run_id, "status", {"status": "running"})
+    await append_run_event(run_id, "step", step_data)
+    await append_run_event(run_id, "status", {"status": "running"})
     return True
 
 
@@ -487,7 +494,7 @@ async def resume_planner_loop(run_id: str) -> None:
     Resume the planner after a pending tool call was approved and executed.
     Loads run state (steps, tool_calls), reconstructs conversation, and continues from the next step.
     """
-    run = get_run_by_id(run_id)
+    run = await get_run_by_id(run_id)
     if not run or run.status != "running":
         logger.warning("resume_planner_loop: run %s not found or not running", run_id)
         return
@@ -512,10 +519,14 @@ async def resume_planner_loop(run_id: str) -> None:
     from app.core.services import get_service_container
     container = get_service_container()
     llm = container._llm_manager.get_provider()
+
     async def _gen(prompt: str, system_prompt: Optional[str] = None) -> str:
         return await llm.generate(prompt=prompt, system_prompt=system_prompt)
+
     llm_generate = _gen
-    start_step = len(steps) + 1
+    # Resume from last checkpoint, not just len(steps)+1, to handle mid-step crashes
+    checkpoint = run.checkpoint_step_index or 0
+    start_step = max(checkpoint + 1, len(steps) + 1)
     with trace_run(run_id, goal):
         await _run_planner_steps(
             run_id=run_id,

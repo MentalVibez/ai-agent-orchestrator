@@ -63,15 +63,20 @@ class WorkflowExecutor:
         step_outputs: Dict[str, Any] = {}
         workflow_context = input_data.copy()
 
+        async def _skip(step_id: str) -> WorkflowStepResult:
+            return WorkflowStepResult(step_id=step_id, status=WorkflowStepStatus.SKIPPED)
+
         # Execute steps: each batch runs in parallel; batches run in order
         for step_batch in execution_order:
-            # Run all steps in this batch concurrently
-            batch_tasks = [
-                self.execute_step(
-                    step, self._prepare_step_context(step, workflow_context, step_outputs)
-                )
-                for step in step_batch
-            ]
+            # Run all steps in this batch concurrently (skip steps whose condition is False)
+            batch_tasks = []
+            for step in step_batch:
+                step_ctx = self._prepare_step_context(step, workflow_context, step_outputs)
+                if self._evaluate_condition(getattr(step, "condition", None), step_ctx):
+                    batch_tasks.append(self.execute_step(step, step_ctx))
+                else:
+                    logger.info("Skipping step '%s' (condition not met)", step.step_id)
+                    batch_tasks.append(_skip(step.step_id))
             batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
 
             step_failed = False
@@ -113,7 +118,7 @@ class WorkflowExecutor:
         try:
             from app.core.persistence import save_workflow_execution
 
-            save_workflow_execution(
+            await save_workflow_execution(
                 workflow_id=workflow.workflow_id,
                 input_data=input_data,
                 output_data=workflow_context,
@@ -132,6 +137,26 @@ class WorkflowExecutor:
             error=None if success else "Workflow execution failed",
             duration=duration,
         )
+
+    def _evaluate_condition(
+        self, condition: Optional[str], context: Dict[str, Any]
+    ) -> bool:
+        """
+        Evaluate a step condition expression (P1.3: conditional edges).
+        Returns True if step should run, False to skip.
+        Empty/None condition always returns True.
+
+        The expression has access to 'context' dict only (no builtins for safety).
+        Example: "context.get('status') == 'ok'"
+        """
+        if not condition:
+            return True
+        try:
+            result = eval(condition, {"__builtins__": {}}, {"context": context})  # noqa: S307
+            return bool(result)
+        except Exception as e:
+            logger.warning("Condition evaluation failed (%r): %s — skipping step", condition, e)
+            return False
 
     async def execute_step(
         self, step: WorkflowStep, context: Optional[Dict[str, Any]] = None

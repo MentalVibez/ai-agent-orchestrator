@@ -184,7 +184,7 @@ async def prometheus_webhook(
     # Security: concurrency cap — prevent alert storms from spawning unlimited runs
     max_concurrent = getattr(settings, "webhook_max_concurrent_runs", 5)
     try:
-        active_runs = list_runs(status="running", limit=max_concurrent + 1)
+        active_runs = await list_runs(status="running", limit=max_concurrent + 1)
         if len(active_runs) >= max_concurrent:
             logger.warning(
                 "Webhook: concurrency cap hit (%d active runs >= max %d)", len(active_runs), max_concurrent
@@ -213,7 +213,7 @@ async def prometheus_webhook(
     # Record dedup entry before starting run (prevents race condition duplicate)
     _record_alert(fingerprint)
 
-    run = create_run(
+    run = await create_run(
         goal=goal,
         agent_profile_id=agent_profile_id,
         context={"source": "prometheus_webhook", "alerts": firing[:3]},

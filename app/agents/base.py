@@ -1,5 +1,6 @@
 """Base agent class with common functionality."""
 
+import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
@@ -162,13 +163,73 @@ class BaseAgent(ABC):
                 details={"available_tools": self._tool_registry.list_tools()},
             )
 
-        # Execute tool with sandboxing
+        # Execute tool with asyncio.wait_for timeout (P0.3: replaces threading.Timer)
         from app.core.sandbox import get_sandbox
 
         sandbox = get_sandbox()
+        ctx = sandbox.get_context(self.agent_id) or sandbox.create_context(self.agent_id)
+        timeout = ctx.resource_limits.max_execution_time
 
-        with sandbox.execute_with_limits(self.agent_id, f"tool_{tool_id}"):
+        try:
+            if timeout > 0:
+                return await asyncio.wait_for(
+                    tool.execute(self.agent_id, params, context),
+                    timeout=timeout,
+                )
             return await tool.execute(self.agent_id, params, context)
+        except asyncio.TimeoutError:
+            from app.core.exceptions import AgentError
+            raise AgentError(
+                f"Tool '{tool_id}' timed out after {timeout}s",
+                agent_id=self.agent_id,
+            )
+
+    async def load_session_state(self, run_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Load persisted session state from DB into self._state.
+        Optionally scoped to a specific run_id.
+        """
+        from app.core.agent_memory import load_session_state
+
+        state = await load_session_state(self.agent_id, run_id=run_id)
+        self._state.update(state)
+        return state
+
+    async def save_session_state(self, run_id: Optional[str] = None) -> None:
+        """
+        Persist self._state to DB (optionally scoped to a run_id).
+        """
+        from app.core.agent_memory import save_session_state
+
+        await save_session_state(self.agent_id, self._state.copy(), run_id=run_id)
+
+    async def send_to_agent(self, target_agent_id: str, message: Dict[str, Any]) -> None:
+        """
+        Send a message to another agent via the message bus.
+
+        Args:
+            target_agent_id: Recipient agent identifier
+            message: Payload dict (arbitrary structure)
+        """
+        from app.core.agent_bus import get_agent_bus
+
+        bus = get_agent_bus()
+        await bus.publish(target_agent_id, message)
+
+    async def receive_from_agent(self, timeout: float = 5.0) -> Optional[Dict[str, Any]]:
+        """
+        Receive the next message sent to this agent, waiting up to `timeout` seconds.
+
+        Args:
+            timeout: Seconds to wait before returning None
+
+        Returns:
+            Message dict, or None on timeout
+        """
+        from app.core.agent_bus import get_agent_bus
+
+        bus = get_agent_bus()
+        return await bus.receive(self.agent_id, timeout=timeout)
 
     def get_available_tools(self) -> List[Dict[str, str]]:
         """

@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from threading import RLock
 from typing import Any, Dict, List, Optional
 
@@ -110,7 +110,7 @@ class CostTracker:
         cost = self.calculate_cost(provider, model, input_tokens, output_tokens)
 
         record = CostRecord(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
             provider=provider,
             model=model,
             input_tokens=input_tokens,
@@ -130,11 +130,48 @@ class CostTracker:
             if self._alerts_enabled:
                 self._check_daily_limits(record)
 
+        # Persist to DB asynchronously (best-effort; daemon thread so it won't block shutdown)
+        try:
+            import threading
+
+            def _persist():
+                try:
+                    from app.db.database import SessionLocal
+                    from app.db.models import CostRecordDB
+
+                    db = SessionLocal()
+                    try:
+                        db.add(
+                            CostRecordDB(
+                                provider=provider,
+                                model=model,
+                                input_tokens=input_tokens,
+                                output_tokens=output_tokens,
+                                total_tokens=total_tokens,
+                                cost_usd=cost,
+                                agent_id=agent_id,
+                                endpoint=endpoint,
+                                request_id=request_id,
+                                timestamp=record.timestamp,
+                            )
+                        )
+                        db.commit()
+                    except Exception:
+                        db.rollback()
+                    finally:
+                        db.close()
+                except Exception:
+                    pass
+
+            threading.Thread(target=_persist, daemon=True).start()
+        except Exception:
+            pass
+
         return record
 
     def _check_daily_limits(self, record: CostRecord):
         """Check if daily cost limits are exceeded."""
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).replace(tzinfo=None).date()
         key = f"{record.endpoint or 'default'}_{today}"
 
         daily_cost = self.get_daily_cost(date=today, endpoint=record.endpoint)
@@ -184,7 +221,7 @@ class CostTracker:
             Daily cost in USD
         """
         if date is None:
-            date = datetime.utcnow().date()
+            date = datetime.now(timezone.utc).replace(tzinfo=None).date()
 
         start = datetime.combine(date, datetime.min.time())
         end = datetime.combine(date, datetime.max.time())
@@ -274,7 +311,7 @@ class CostTracker:
             endpoint: Endpoint name
             limit: Daily cost limit in USD
         """
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).replace(tzinfo=None).date()
         key = f"{endpoint}_{today}"
         self._daily_limits[key] = limit
 

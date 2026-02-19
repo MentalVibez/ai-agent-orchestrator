@@ -1,5 +1,7 @@
 """Database models for persistence."""
 
+from datetime import datetime
+
 from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, String, Text
 from sqlalchemy.sql import func
 
@@ -128,6 +130,8 @@ class Run(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     # When status is awaiting_approval, holds { server_id, tool_name, arguments, reason? } for HITL.
     pending_tool_call = Column(JSON, nullable=True)
+    # P2.3: LangGraph-style checkpointing — last completed step index (0 = not started)
+    checkpoint_step_index = Column(Integer, default=0, nullable=True)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for API response."""
@@ -150,3 +154,39 @@ class Run(Base):
             if pending:
                 out["pending_approval"] = pending
         return out
+
+
+class CostRecordDB(Base):
+    """Persisted record of a single LLM call cost (P1.4)."""
+
+    __tablename__ = "cost_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(String, index=True, nullable=True)
+    provider = Column(String, nullable=False)
+    model = Column(String, nullable=False)
+    input_tokens = Column(Integer, default=0)
+    output_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    cost_usd = Column(Float, default=0.0)
+    agent_id = Column(String, nullable=True)
+    endpoint = Column(String, nullable=True)
+    request_id = Column(String, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "run_id": self.run_id,
+            "provider": self.provider,
+            "model": self.model,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
+            "cost_usd": self.cost_usd,
+            "agent_id": self.agent_id,
+            "endpoint": self.endpoint,
+            "request_id": self.request_id,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }

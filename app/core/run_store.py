@@ -1,5 +1,6 @@
 """Persistence for MCP-centric runs."""
 
+import asyncio
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -7,12 +8,16 @@ from app.db.database import SessionLocal
 from app.db.models import Run, RunEvent
 
 
-def create_run(
+# ---------------------------------------------------------------------------
+# Private sync helpers (run in thread pool via asyncio.to_thread)
+# ---------------------------------------------------------------------------
+
+
+def _create_run_sync(
     goal: str,
     agent_profile_id: str = "default",
     context: Optional[Dict[str, Any]] = None,
 ) -> Run:
-    """Create a new run with status pending. Returns the Run model."""
     run_id = str(uuid.uuid4())
     db = SessionLocal()
     try:
@@ -34,8 +39,9 @@ def create_run(
         db.close()
 
 
-def append_run_event(run_id: str, event_type: str, payload: Optional[Dict[str, Any]] = None) -> None:
-    """Append an event for a run (for SSE streaming). DB-backed so workers can emit events."""
+def _append_run_event_sync(
+    run_id: str, event_type: str, payload: Optional[Dict[str, Any]] = None
+) -> None:
     db = SessionLocal()
     try:
         db.add(
@@ -53,13 +59,9 @@ def append_run_event(run_id: str, event_type: str, payload: Optional[Dict[str, A
         db.close()
 
 
-def get_run_events(
+def _get_run_events_sync(
     run_id: str, after_id: Optional[int] = None, limit: int = 100
 ) -> List[Tuple[int, str, Dict[str, Any]]]:
-    """
-    Get events for a run, optionally after a given event id.
-    Returns list of (event_id, event_type, payload).
-    """
     db = SessionLocal()
     try:
         q = db.query(RunEvent).filter(RunEvent.run_id == run_id).order_by(RunEvent.id.asc())
@@ -71,8 +73,7 @@ def get_run_events(
         db.close()
 
 
-def get_run_by_id(run_id: str) -> Optional[Run]:
-    """Get run by run_id (uuid string)."""
+def _get_run_by_id_sync(run_id: str) -> Optional[Run]:
     db = SessionLocal()
     try:
         return db.query(Run).filter(Run.run_id == run_id).first()
@@ -80,12 +81,11 @@ def get_run_by_id(run_id: str) -> Optional[Run]:
         db.close()
 
 
-def list_runs(
+def _list_runs_sync(
     limit: int = 20,
     offset: int = 0,
     status: Optional[str] = None,
 ) -> List[Run]:
-    """List runs, newest first. Optional filter by status."""
     db = SessionLocal()
     try:
         q = db.query(Run).order_by(Run.created_at.desc())
@@ -96,7 +96,7 @@ def list_runs(
         db.close()
 
 
-def update_run(
+def _update_run_sync(
     run_id: str,
     status: Optional[str] = None,
     error: Optional[str] = None,
@@ -106,9 +106,8 @@ def update_run(
     completed_at: Optional[Any] = None,
     pending_tool_call: Optional[Dict[str, Any]] = None,
     _clear_pending_tool_call: bool = False,
+    checkpoint_step_index: Optional[int] = None,
 ) -> Optional[Run]:
-    """Update run fields. Returns updated Run or None if not found.
-    Use pending_tool_call={...} to set, or _clear_pending_tool_call=True to clear."""
     db = SessionLocal()
     try:
         run = db.query(Run).filter(Run.run_id == run_id).first()
@@ -130,6 +129,8 @@ def update_run(
             run.pending_tool_call = pending_tool_call
         if _clear_pending_tool_call:
             run.pending_tool_call = None
+        if checkpoint_step_index is not None:
+            run.checkpoint_step_index = checkpoint_step_index
         db.commit()
         db.refresh(run)
         return run
@@ -138,3 +139,75 @@ def update_run(
         raise
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Public async API
+# ---------------------------------------------------------------------------
+
+
+async def create_run(
+    goal: str,
+    agent_profile_id: str = "default",
+    context: Optional[Dict[str, Any]] = None,
+) -> Run:
+    """Create a new run with status pending. Returns the Run model."""
+    return await asyncio.to_thread(_create_run_sync, goal, agent_profile_id, context)
+
+
+async def append_run_event(
+    run_id: str, event_type: str, payload: Optional[Dict[str, Any]] = None
+) -> None:
+    """Append an event for a run (for SSE streaming). DB-backed so workers can emit events."""
+    await asyncio.to_thread(_append_run_event_sync, run_id, event_type, payload)
+
+
+async def get_run_events(
+    run_id: str, after_id: Optional[int] = None, limit: int = 100
+) -> List[Tuple[int, str, Dict[str, Any]]]:
+    """
+    Get events for a run, optionally after a given event id.
+    Returns list of (event_id, event_type, payload).
+    """
+    return await asyncio.to_thread(_get_run_events_sync, run_id, after_id, limit)
+
+
+async def get_run_by_id(run_id: str) -> Optional[Run]:
+    """Get run by run_id (uuid string)."""
+    return await asyncio.to_thread(_get_run_by_id_sync, run_id)
+
+
+async def list_runs(
+    limit: int = 20,
+    offset: int = 0,
+    status: Optional[str] = None,
+) -> List[Run]:
+    """List runs, newest first. Optional filter by status."""
+    return await asyncio.to_thread(_list_runs_sync, limit, offset, status)
+
+
+async def update_run(
+    run_id: str,
+    status: Optional[str] = None,
+    error: Optional[str] = None,
+    answer: Optional[str] = None,
+    steps: Optional[List[Dict[str, Any]]] = None,
+    tool_calls: Optional[List[Dict[str, Any]]] = None,
+    completed_at: Optional[Any] = None,
+    pending_tool_call: Optional[Dict[str, Any]] = None,
+    _clear_pending_tool_call: bool = False,
+) -> Optional[Run]:
+    """Update run fields. Returns updated Run or None if not found.
+    Use pending_tool_call={...} to set, or _clear_pending_tool_call=True to clear."""
+    return await asyncio.to_thread(
+        _update_run_sync,
+        run_id,
+        status,
+        error,
+        answer,
+        steps,
+        tool_calls,
+        completed_at,
+        pending_tool_call,
+        _clear_pending_tool_call,
+    )

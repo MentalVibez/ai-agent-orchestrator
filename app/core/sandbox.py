@@ -1,10 +1,11 @@
 """Agent sandboxing for secure execution isolation."""
 
+import asyncio
 import logging
 import time
 from contextlib import contextmanager
 from threading import Timer
-from typing import Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from app.core.exceptions import AgentError
 
@@ -231,6 +232,89 @@ class AgentSandbox:
                     )
                 except (ValueError, OSError):
                     pass
+
+    async def execute_with_limits_async(
+        self,
+        agent_id: str,
+        func: Callable,
+        args: Optional[List[Any]] = None,
+        kwargs: Optional[Dict[str, Any]] = None,
+        operation: str = "execute",
+    ) -> Any:
+        """
+        Execute a sync function asynchronously with timeout using asyncio.wait_for.
+        Logs to the audit trail. Raises TimeoutError on timeout.
+
+        Args:
+            agent_id: Agent identifier
+            func: Synchronous callable to execute
+            args: Positional arguments for func
+            kwargs: Keyword arguments for func
+            operation: Operation name for audit log
+
+        Returns:
+            Result of func(*args, **kwargs)
+
+        Raises:
+            TimeoutError: If execution exceeds the agent's max_execution_time limit
+            AgentError: If operation not allowed
+        """
+        context = self.get_context(agent_id)
+        if not context:
+            context = self.create_context(agent_id)
+
+        if context.allowed_operations and operation not in context.allowed_operations:
+            raise AgentError(
+                f"Operation '{operation}' not allowed for agent '{agent_id}'",
+                agent_id=agent_id,
+                details={"operation": operation, "allowed": context.allowed_operations},
+            )
+
+        timeout = context.resource_limits.max_execution_time
+        context.start_time = time.time()
+        context.audit_log.append(
+            {"timestamp": time.time(), "operation": operation, "action": "start"}
+        )
+
+        async def _run():
+            return await asyncio.to_thread(func, *(args or []), **(kwargs or {}))
+
+        try:
+            if timeout > 0:
+                result = await asyncio.wait_for(_run(), timeout=timeout)
+            else:
+                result = await _run()
+            context.audit_log.append(
+                {
+                    "timestamp": time.time(),
+                    "operation": operation,
+                    "action": "success",
+                    "duration": time.time() - context.start_time,
+                }
+            )
+            return result
+        except asyncio.TimeoutError:
+            context.audit_log.append(
+                {
+                    "timestamp": time.time(),
+                    "operation": operation,
+                    "action": "timeout",
+                    "timeout": timeout,
+                }
+            )
+            raise TimeoutError(
+                f"Execution timeout exceeded ({timeout}s) for agent '{agent_id}'"
+            )
+        except Exception as e:
+            context.audit_log.append(
+                {
+                    "timestamp": time.time(),
+                    "operation": operation,
+                    "action": "error",
+                    "error": str(e),
+                }
+            )
+            raise
 
     def check_permission(
         self, agent_id: str, operation: str, resource: Optional[str] = None

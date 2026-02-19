@@ -43,7 +43,7 @@ class TestPersistence:
         return session
 
     @patch("app.core.persistence.SessionLocal")
-    def test_save_execution_history_success(
+    async def test_save_execution_history_success(
         self, mock_session_local, sample_agent_result, mock_db_session
     ):
         """Test saving execution history successfully."""
@@ -55,7 +55,7 @@ class TestPersistence:
         mock_db_session.add.return_value = None
 
         with patch("app.core.persistence.ExecutionHistory", return_value=mock_history):
-            save_execution_history(
+            await save_execution_history(
                 sample_agent_result, request_id="req123", execution_time_ms=100.0
             )
 
@@ -64,7 +64,7 @@ class TestPersistence:
             assert mock_db_session.refresh.called
 
     @patch("app.core.persistence.SessionLocal")
-    def test_save_execution_history_with_error(
+    async def test_save_execution_history_with_error(
         self, mock_session_local, sample_agent_result, mock_db_session
     ):
         """Test saving execution history with database error."""
@@ -73,12 +73,12 @@ class TestPersistence:
 
         with patch("app.core.persistence.ExecutionHistory"):
             with pytest.raises(Exception):
-                save_execution_history(sample_agent_result)
+                await save_execution_history(sample_agent_result)
 
             assert mock_db_session.rollback.called
 
     @patch("app.core.persistence.SessionLocal")
-    def test_get_execution_history_all(self, mock_session_local, mock_db_session):
+    async def test_get_execution_history_all(self, mock_session_local, mock_db_session):
         """Test getting all execution history."""
         mock_session_local.return_value = mock_db_session
         mock_query = MagicMock()
@@ -89,12 +89,12 @@ class TestPersistence:
         mock_query.limit.return_value = mock_query
         mock_query.all.return_value = [MagicMock()]
 
-        results = get_execution_history()
+        results = await get_execution_history()
 
         assert len(results) >= 0  # May be empty, but should not error
 
     @patch("app.core.persistence.SessionLocal")
-    def test_get_execution_history_by_agent_id(self, mock_session_local, mock_db_session):
+    async def test_get_execution_history_by_agent_id(self, mock_session_local, mock_db_session):
         """Test getting execution history filtered by agent ID."""
         mock_session_local.return_value = mock_db_session
         mock_query = MagicMock()
@@ -105,12 +105,12 @@ class TestPersistence:
         mock_query.limit.return_value = mock_query
         mock_query.all.return_value = []
 
-        get_execution_history(agent_id="test_agent")
+        await get_execution_history(agent_id="test_agent")
 
         assert mock_query.filter.called
 
     @patch("app.core.persistence.SessionLocal")
-    def test_save_agent_state_new(self, mock_session_local, mock_db_session):
+    async def test_save_agent_state_new(self, mock_session_local, mock_db_session):
         """Test saving new agent state."""
         mock_session_local.return_value = mock_db_session
         mock_query = MagicMock()
@@ -120,13 +120,13 @@ class TestPersistence:
 
         mock_state = MagicMock(spec=AgentState)
         with patch("app.core.persistence.AgentState", return_value=mock_state):
-            save_agent_state("test_agent", {"key": "value"})
+            await save_agent_state("test_agent", {"key": "value"})
 
             assert mock_db_session.add.called
             assert mock_db_session.commit.called
 
     @patch("app.core.persistence.SessionLocal")
-    def test_save_agent_state_update(self, mock_session_local, mock_db_session):
+    async def test_save_agent_state_update(self, mock_session_local, mock_db_session):
         """Test updating existing agent state."""
         mock_session_local.return_value = mock_db_session
         mock_existing = MagicMock(spec=AgentState)
@@ -135,13 +135,13 @@ class TestPersistence:
         mock_query.filter.return_value = mock_query
         mock_query.first.return_value = mock_existing
 
-        save_agent_state("test_agent", {"key": "new_value"})
+        await save_agent_state("test_agent", {"key": "new_value"})
 
         assert mock_existing.state_data == {"key": "new_value"}
         assert mock_db_session.commit.called
 
     @patch("app.core.persistence.SessionLocal")
-    def test_get_agent_state_exists(self, mock_session_local, mock_db_session):
+    async def test_get_agent_state_exists(self, mock_session_local, mock_db_session):
         """Test getting existing agent state."""
         mock_session_local.return_value = mock_db_session
         mock_state = MagicMock(spec=AgentState)
@@ -151,12 +151,12 @@ class TestPersistence:
         mock_query.filter.return_value = mock_query
         mock_query.first.return_value = mock_state
 
-        result = get_agent_state("test_agent")
+        result = await get_agent_state("test_agent")
 
         assert result == {"key": "value"}
 
     @patch("app.core.persistence.SessionLocal")
-    def test_get_agent_state_not_exists(self, mock_session_local, mock_db_session):
+    async def test_get_agent_state_not_exists(self, mock_session_local, mock_db_session):
         """Test getting non-existent agent state."""
         mock_session_local.return_value = mock_db_session
         mock_query = MagicMock()
@@ -164,18 +164,18 @@ class TestPersistence:
         mock_query.filter.return_value = mock_query
         mock_query.first.return_value = None
 
-        result = get_agent_state("test_agent")
+        result = await get_agent_state("test_agent")
 
         assert result is None
 
     @patch("app.core.persistence.SessionLocal")
-    def test_save_workflow_execution_success(self, mock_session_local, mock_db_session):
+    async def test_save_workflow_execution_success(self, mock_session_local, mock_db_session):
         """Test saving workflow execution successfully."""
         mock_session_local.return_value = mock_db_session
         mock_execution = MagicMock(spec=WorkflowExecution)
 
         with patch("app.core.persistence.WorkflowExecution", return_value=mock_execution):
-            save_workflow_execution(
+            await save_workflow_execution(
                 workflow_id="test_workflow",
                 input_data={"input": "data"},
                 output_data={"output": "data"},
@@ -187,13 +187,13 @@ class TestPersistence:
             assert mock_db_session.commit.called
 
     @patch("app.core.persistence.SessionLocal")
-    def test_save_workflow_execution_with_error(self, mock_session_local, mock_db_session):
+    async def test_save_workflow_execution_with_error(self, mock_session_local, mock_db_session):
         """Test saving workflow execution with error status."""
         mock_session_local.return_value = mock_db_session
         mock_execution = MagicMock(spec=WorkflowExecution)
 
         with patch("app.core.persistence.WorkflowExecution", return_value=mock_execution):
-            save_workflow_execution(
+            await save_workflow_execution(
                 workflow_id="test_workflow", status="failed", error="Test error"
             )
 

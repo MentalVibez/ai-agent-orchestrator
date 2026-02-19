@@ -3,7 +3,7 @@
 import asyncio
 import json
 import time
-from typing import Any, AsyncIterator, Dict, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -13,6 +13,7 @@ from app.core.cost_tracker import get_cost_tracker
 from app.core.exceptions import LLMProviderError
 from app.core.retry import RetryConfig, retry_async
 from app.llm.base import LLMProvider
+from app.llm.tool_schema import decode_tool_name, mcp_tools_to_bedrock_schema
 
 
 class BedrockProvider(LLMProvider):
@@ -317,3 +318,65 @@ class BedrockProvider(LLMProvider):
             raise RuntimeError(f"Bedrock API error ({error_code}): {error_message}")
         except Exception as e:
             raise RuntimeError(f"Unexpected error in Bedrock generate_with_metadata: {str(e)}")
+
+    async def generate_with_tools(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        system_prompt: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """
+        Generate using the Bedrock Converse API with native tool calling.
+        Returns {"stop_reason": "tool_use", "tool_use": {...}} or {"stop_reason": "end_turn", "text": "..."}.
+        """
+        if not tools:
+            return await super().generate_with_tools(messages, tools, system_prompt, **kwargs)
+
+        # Build Bedrock message format
+        bedrock_messages = []
+        for m in messages:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            bedrock_messages.append({"role": role, "content": [{"text": content}]})
+
+        bedrock_tools = mcp_tools_to_bedrock_schema(tools)
+        system_list = [{"text": system_prompt}] if system_prompt else []
+
+        try:
+            response = await asyncio.to_thread(
+                self.bedrock_runtime.converse,
+                modelId=self.model,
+                messages=bedrock_messages,
+                system=system_list,
+                toolConfig={"tools": bedrock_tools},
+            )
+        except Exception as e:
+            # Fall back to text generation on Converse API errors
+            raise RuntimeError(f"Bedrock Converse API error: {e}") from e
+
+        stop_reason = response.get("stopReason", "end_turn")
+        content_blocks = response.get("output", {}).get("message", {}).get("content", [])
+
+        if stop_reason == "tool_use":
+            for block in content_blocks:
+                if "toolUse" in block:
+                    tool_use_block = block["toolUse"]
+                    encoded_name = tool_use_block.get("name", "")
+                    server_id, tool_name = decode_tool_name(encoded_name)
+                    return {
+                        "stop_reason": "tool_use",
+                        "tool_use": {
+                            "server_id": server_id,
+                            "tool_name": tool_name,
+                            "arguments": tool_use_block.get("input") or {},
+                        },
+                        "text": "",
+                    }
+
+        # end_turn or other: extract text
+        text_parts = []
+        for block in content_blocks:
+            if "text" in block:
+                text_parts.append(block["text"])
+        return {"stop_reason": "end_turn", "text": "".join(text_parts)}

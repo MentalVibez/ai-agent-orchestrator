@@ -1,5 +1,6 @@
 """Persistence layer for storing execution history and agent state."""
 
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -8,20 +9,16 @@ from app.db.models import AgentState, ExecutionHistory, WorkflowExecution
 from app.models.agent import AgentResult
 
 
-def save_execution_history(
-    result: AgentResult, request_id: Optional[str] = None, execution_time_ms: Optional[float] = None
+# ---------------------------------------------------------------------------
+# Private sync helpers (run in thread pool via asyncio.to_thread)
+# ---------------------------------------------------------------------------
+
+
+def _save_execution_history_sync(
+    result: AgentResult,
+    request_id: Optional[str] = None,
+    execution_time_ms: Optional[float] = None,
 ) -> ExecutionHistory:
-    """
-    Save execution history to database.
-
-    Args:
-        result: AgentResult to save
-        request_id: Optional request ID
-        execution_time_ms: Optional execution time in milliseconds
-
-    Returns:
-        ExecutionHistory instance
-    """
     db = SessionLocal()
     try:
         history = ExecutionHistory(
@@ -49,54 +46,28 @@ def save_execution_history(
         db.close()
 
 
-def get_execution_history(
+def _get_execution_history_sync(
     agent_id: Optional[str] = None,
     request_id: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
 ) -> List[ExecutionHistory]:
-    """
-    Get execution history.
-
-    Args:
-        agent_id: Optional agent ID filter
-        request_id: Optional request ID filter
-        limit: Maximum number of records
-        offset: Offset for pagination
-
-    Returns:
-        List of ExecutionHistory instances
-    """
     db = SessionLocal()
     try:
         query = db.query(ExecutionHistory)
-
         if agent_id:
             query = query.filter(ExecutionHistory.agent_id == agent_id)
         if request_id:
             query = query.filter(ExecutionHistory.request_id == request_id)
-
         return query.order_by(ExecutionHistory.created_at.desc()).offset(offset).limit(limit).all()
     finally:
         db.close()
 
 
-def save_agent_state(agent_id: str, state_data: Dict[str, Any]) -> AgentState:
-    """
-    Save agent state to database.
-
-    Args:
-        agent_id: Agent identifier
-        state_data: State data to save
-
-    Returns:
-        AgentState instance
-    """
+def _save_agent_state_sync(agent_id: str, state_data: Dict[str, Any]) -> AgentState:
     db = SessionLocal()
     try:
-        # Check if state exists
         existing = db.query(AgentState).filter(AgentState.agent_id == agent_id).first()
-
         if existing:
             existing.state_data = state_data
             existing.last_updated = datetime.utcnow()
@@ -116,16 +87,7 @@ def save_agent_state(agent_id: str, state_data: Dict[str, Any]) -> AgentState:
         db.close()
 
 
-def get_agent_state(agent_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Get agent state from database.
-
-    Args:
-        agent_id: Agent identifier
-
-    Returns:
-        State data if found, None otherwise
-    """
+def _get_agent_state_sync(agent_id: str) -> Optional[Dict[str, Any]]:
     db = SessionLocal()
     try:
         state = db.query(AgentState).filter(AgentState.agent_id == agent_id).first()
@@ -136,7 +98,113 @@ def get_agent_state(agent_id: str) -> Optional[Dict[str, Any]]:
         db.close()
 
 
-def save_workflow_execution(
+def _save_workflow_execution_sync(
+    workflow_id: str,
+    input_data: Optional[Dict[str, Any]] = None,
+    output_data: Optional[Dict[str, Any]] = None,
+    status: str = "completed",
+    error: Optional[str] = None,
+    execution_time_ms: Optional[float] = None,
+) -> WorkflowExecution:
+    db = SessionLocal()
+    try:
+        execution = WorkflowExecution(
+            workflow_id=workflow_id,
+            input_data=input_data,
+            output_data=output_data,
+            status=status,
+            error=error,
+            execution_time_ms=execution_time_ms,
+            completed_at=datetime.utcnow() if status in ["completed", "failed"] else None,
+        )
+        db.add(execution)
+        db.commit()
+        db.refresh(execution)
+        return execution
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Public async API
+# ---------------------------------------------------------------------------
+
+
+async def save_execution_history(
+    result: AgentResult,
+    request_id: Optional[str] = None,
+    execution_time_ms: Optional[float] = None,
+) -> ExecutionHistory:
+    """
+    Save execution history to database.
+
+    Args:
+        result: AgentResult to save
+        request_id: Optional request ID
+        execution_time_ms: Optional execution time in milliseconds
+
+    Returns:
+        ExecutionHistory instance
+    """
+    return await asyncio.to_thread(
+        _save_execution_history_sync, result, request_id, execution_time_ms
+    )
+
+
+async def get_execution_history(
+    agent_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> List[ExecutionHistory]:
+    """
+    Get execution history.
+
+    Args:
+        agent_id: Optional agent ID filter
+        request_id: Optional request ID filter
+        limit: Maximum number of records
+        offset: Offset for pagination
+
+    Returns:
+        List of ExecutionHistory instances
+    """
+    return await asyncio.to_thread(
+        _get_execution_history_sync, agent_id, request_id, limit, offset
+    )
+
+
+async def save_agent_state(agent_id: str, state_data: Dict[str, Any]) -> AgentState:
+    """
+    Save agent state to database.
+
+    Args:
+        agent_id: Agent identifier
+        state_data: State data to save
+
+    Returns:
+        AgentState instance
+    """
+    return await asyncio.to_thread(_save_agent_state_sync, agent_id, state_data)
+
+
+async def get_agent_state(agent_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Get agent state from database.
+
+    Args:
+        agent_id: Agent identifier
+
+    Returns:
+        State data if found, None otherwise
+    """
+    return await asyncio.to_thread(_get_agent_state_sync, agent_id)
+
+
+async def save_workflow_execution(
     workflow_id: str,
     input_data: Optional[Dict[str, Any]] = None,
     output_data: Optional[Dict[str, Any]] = None,
@@ -158,23 +226,12 @@ def save_workflow_execution(
     Returns:
         WorkflowExecution instance
     """
-    db = SessionLocal()
-    try:
-        execution = WorkflowExecution(
-            workflow_id=workflow_id,
-            input_data=input_data,
-            output_data=output_data,
-            status=status,
-            error=error,
-            execution_time_ms=execution_time_ms,
-            completed_at=datetime.utcnow() if status in ["completed", "failed"] else None,
-        )
-        db.add(execution)
-        db.commit()
-        db.refresh(execution)
-        return execution
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
+    return await asyncio.to_thread(
+        _save_workflow_execution_sync,
+        workflow_id,
+        input_data,
+        output_data,
+        status,
+        error,
+        execution_time_ms,
+    )

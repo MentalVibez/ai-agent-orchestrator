@@ -30,6 +30,13 @@ class WorkflowStep(BaseModel):
     context: Optional[Dict[str, Any]] = Field(
         None, description="Optional context data for the step"
     )
+    condition: Optional[str] = Field(
+        None,
+        description=(
+            "Optional Python expression evaluated against step context to decide whether to run. "
+            "Example: \"context.get('status') == 'ok'\". If False, step is skipped."
+        ),
+    )
 
 
 class Workflow(BaseModel):

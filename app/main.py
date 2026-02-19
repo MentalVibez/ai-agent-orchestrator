@@ -4,7 +4,7 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.routes import agents, metrics, orchestrator, runs, webhooks
+from app.api.v1.routes import rag as rag_routes
 from app.core.auth import verify_api_key
 from app.core.config import settings
 from app.core.exceptions import (
@@ -373,6 +374,8 @@ app.include_router(agents.router)
 app.include_router(metrics.router)
 app.include_router(runs.router)
 app.include_router(webhooks.router)
+# RAG routes are always registered; individual endpoints return 503 if chromadb is not installed
+app.include_router(rag_routes.router)
 
 
 @app.get("/", tags=["root"])
@@ -503,7 +506,7 @@ async def health_check(request: Request) -> HealthResponse:
         return HealthResponse(
             status=overall_status,
             version=settings.app_version,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             mcp_connected=mcp_connected,
         )
     except Exception as e:
@@ -511,7 +514,7 @@ async def health_check(request: Request) -> HealthResponse:
         return HealthResponse(
             status="unhealthy",
             version=settings.app_version,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             mcp_connected=None,
         )
 

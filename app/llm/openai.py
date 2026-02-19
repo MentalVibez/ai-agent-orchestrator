@@ -1,12 +1,14 @@
 """OpenAI LLM provider implementation."""
 
+import json
 import time
-from typing import Any, AsyncIterator, Dict, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from openai import AsyncOpenAI, OpenAIError
 
 from app.core.config import settings
 from app.llm.base import LLMProvider
+from app.llm.tool_schema import decode_tool_name, mcp_tools_to_openai_schema
 
 
 class OpenAIProvider(LLMProvider):
@@ -122,3 +124,52 @@ class OpenAIProvider(LLMProvider):
             }
         except OpenAIError as e:
             raise RuntimeError(f"OpenAI API error: {e}") from e
+
+    async def generate_with_tools(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        system_prompt: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Generate using OpenAI function calling (tools parameter)."""
+        if not tools:
+            return await super().generate_with_tools(messages, tools, system_prompt, **kwargs)
+
+        openai_messages = []
+        if system_prompt:
+            openai_messages.append({"role": "system", "content": system_prompt})
+        for m in messages:
+            openai_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+
+        openai_tools = mcp_tools_to_openai_schema(tools)
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=openai_messages,
+                tools=openai_tools,
+                tool_choice="auto",
+            )
+        except OpenAIError as e:
+            raise RuntimeError(f"OpenAI API error in generate_with_tools: {e}") from e
+
+        choice = response.choices[0]
+        if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
+            tc = choice.message.tool_calls[0]
+            encoded_name = tc.function.name
+            server_id, tool_name = decode_tool_name(encoded_name)
+            try:
+                arguments = json.loads(tc.function.arguments or "{}")
+            except json.JSONDecodeError:
+                arguments = {}
+            return {
+                "stop_reason": "tool_use",
+                "tool_use": {
+                    "server_id": server_id,
+                    "tool_name": tool_name,
+                    "arguments": arguments,
+                },
+                "text": "",
+            }
+
+        return {"stop_reason": "end_turn", "text": choice.message.content or ""}

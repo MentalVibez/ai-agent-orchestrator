@@ -111,3 +111,43 @@ def trace_tool_call(run_id: str, server_id: str, tool_name: str) -> Generator[An
         },
     ) as span:
         yield span
+
+
+@contextmanager
+def trace_llm_call(
+    provider: str,
+    model: str,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+) -> Generator[Any, None, None]:
+    """
+    Context manager for an LLM call span using OpenTelemetry GenAI semantic conventions (P2.4).
+    Attributes follow https://opentelemetry.io/docs/specs/semconv/gen-ai/ (gen_ai.*).
+    No-op when tracing is disabled.
+
+    Args:
+        provider: LLM provider name (e.g. "anthropic", "openai", "ollama")
+        model: Model identifier
+        input_tokens: Input token count (set after call)
+        output_tokens: Output token count (set after call)
+
+    Yields:
+        span object (or None when disabled)
+    """
+    tracer = _init_tracer()
+    if tracer is None:
+        yield None
+        return
+    with tracer.start_as_current_span(
+        "gen_ai.chat",
+        attributes={
+            "gen_ai.system": provider,
+            "gen_ai.request.model": model,
+        },
+    ) as span:
+        yield span
+        # Caller can update token counts after the LLM call completes
+        if span and input_tokens:
+            span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
+        if span and output_tokens:
+            span.set_attribute("gen_ai.usage.output_tokens", output_tokens)

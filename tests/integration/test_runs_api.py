@@ -4,6 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.core.config import settings
 from app.db.database import init_db
@@ -12,6 +15,25 @@ from app.main import app
 
 @pytest.fixture
 def client():
+    import app.core.persistence as persistence_module
+    import app.core.run_store as run_store_module
+    import app.db.database as db_module
+
+    # Use in-memory SQLite with StaticPool so all threads share the same DB.
+    # StaticPool ensures the single in-memory connection is shared across threads.
+    new_engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    new_session_factory = sessionmaker(autocommit=False, autoflush=False, bind=new_engine)
+
+    # Patch the module-level attribute AND any by-value imports in consumer modules
+    db_module.engine = new_engine
+    db_module.SessionLocal = new_session_factory
+    run_store_module.SessionLocal = new_session_factory
+    persistence_module.SessionLocal = new_session_factory
+
     init_db()
     return TestClient(app)
 
@@ -124,7 +146,9 @@ class TestRunsAPI:
         assert response.status_code == 201
         mock_enqueue.assert_called_once()
         mock_create_task.assert_called_once()
-        mock_planner.assert_not_called()
+        # run_planner_loop is called once to create the coroutine for create_task,
+        # but is never directly awaited — the task runner handles execution.
+        mock_planner.assert_called_once()
 
     def test_post_run_enqueued_when_queue_returns_true(self, client, api_key_disabled):
         """When enqueue_run returns True, planner is not run in-process (worker will run it)."""

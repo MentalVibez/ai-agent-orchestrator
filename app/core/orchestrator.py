@@ -91,7 +91,7 @@ class Orchestrator:
                         from app.core.persistence import save_execution_history
 
                         execution_time_ms = (time.time() - start_time) * 1000
-                        save_execution_history(result, execution_time_ms=execution_time_ms)
+                        await save_execution_history(result, execution_time_ms=execution_time_ms)
                     except Exception as e:
                         # Log but don't fail on persistence errors
                         import logging
@@ -305,7 +305,7 @@ class Orchestrator:
             result = await agent.execute(task, context)
         try:
             execution_time_ms = (time.time() - start_time) * 1000
-            save_execution_history(result, execution_time_ms=execution_time_ms)
+            await save_execution_history(result, execution_time_ms=execution_time_ms)
         except Exception as e:
             logger.warning("Failed to save execution history: %s", e)
         return result

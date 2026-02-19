@@ -41,7 +41,7 @@ async def start_run(
     if body.stream_tokens:
         context = {**(context or {}), "_stream_tokens": True}
     profile_id = validate_agent_profile_id(body.agent_profile_id)
-    run = create_run(
+    run = await create_run(
         goal=goal,
         agent_profile_id=profile_id,
         context=context,
@@ -84,7 +84,7 @@ async def approve_run(
     api_key: str = Depends(verify_api_key),
 ) -> dict:
     """Approve or reject a run that is awaiting human approval (HITL)."""
-    run = get_run_by_id(run_id)
+    run = await get_run_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
     if run.status != "awaiting_approval":
@@ -92,7 +92,7 @@ async def approve_run(
     from app.core.run_store import update_run as do_update
 
     if not body.approved:
-        do_update(
+        await do_update(
             run_id,
             status="failed",
             error="Tool call rejected by user",
@@ -121,14 +121,14 @@ async def reject_run(
     api_key: str = Depends(verify_api_key),
 ) -> dict:
     """Reject a run that is awaiting human approval (HITL). Stub implementation."""
-    run = get_run_by_id(run_id)
+    run = await get_run_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
     if run.status != "awaiting_approval":
         return {"run_id": run_id, "status": run.status, "message": "Run is not awaiting approval."}
     from app.core.run_store import update_run as do_update
 
-    do_update(
+    await do_update(
         run_id,
         status="failed",
         error="Tool call rejected by user",
@@ -145,14 +145,14 @@ async def cancel_run(
     api_key: str = Depends(verify_api_key),
 ) -> dict:
     """Cancel a run. Sets status to cancelled; the planner will exit at the next step check."""
-    run = get_run_by_id(run_id)
+    run = await get_run_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
     if run.status in ("completed", "failed", "cancelled"):
         return {"run_id": run_id, "status": run.status, "message": "Run already ended."}
     from app.core.run_store import update_run as do_update
 
-    do_update(run_id, status="cancelled")
+    await do_update(run_id, status="cancelled")
     return {"run_id": run_id, "status": "cancelled", "message": "Cancel requested."}
 
 
@@ -172,7 +172,7 @@ async def list_runs_route(
     api_key: str = Depends(verify_api_key),
 ) -> dict:
     """List runs with optional status filter."""
-    runs = list_runs(limit=limit, offset=offset, status=status)
+    runs = await list_runs(limit=limit, offset=offset, status=status)
     return {
         "runs": [r.to_dict() for r in runs],
         "limit": limit,
@@ -194,7 +194,7 @@ async def stream_run(
     api_key: str = Depends(verify_api_key),
 ) -> StreamingResponse:
     """Stream run progress as SSE. Events: status, step, answer. Stops when run is completed/failed/cancelled."""
-    run = get_run_by_id(run_id)
+    run = await get_run_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
 
@@ -202,12 +202,12 @@ async def stream_run(
         last_event_id: Optional[int] = None
         poll_interval = 0.5
         while True:
-            events = get_run_events(run_id, after_id=last_event_id)
+            events = await get_run_events(run_id, after_id=last_event_id)
             for eid, etype, payload in events:
                 last_event_id = eid
                 data = json.dumps({"event_id": eid, "type": etype, **payload}, default=str)
                 yield f"event: {etype}\ndata: {data}\n\n"
-            run_state = get_run_by_id(run_id)
+            run_state = await get_run_by_id(run_id)
             if run_state and run_state.status in ("completed", "failed", "cancelled"):
                 yield f"event: end\ndata: {json.dumps({'status': run_state.status})}\n\n"
                 break
@@ -237,7 +237,7 @@ async def get_run(
     api_key: str = Depends(verify_api_key),
 ) -> RunDetailResponse:
     """Get run status, steps, tool calls, and final answer."""
-    run = get_run_by_id(run_id)
+    run = await get_run_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
     pending_approval = None

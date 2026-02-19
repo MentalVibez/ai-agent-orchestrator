@@ -53,9 +53,16 @@ class MCPClientManager:
         await self._exit_stack.__aenter__()
         try:
             for server_id, cfg in servers:
-                if cfg.get("transport") != "stdio":
+                transport = cfg.get("transport", "stdio")
+                if transport == "sse":
+                    # P1.2: HTTP SSE transport
+                    await self._connect_sse(server_id, cfg, ClientSession)
+                    continue
+                if transport != "stdio":
                     logger.warning(
-                        "MCP server %s: only stdio transport is supported in v0", server_id
+                        "MCP server %s: unsupported transport '%s' (supported: stdio, sse)",
+                        server_id,
+                        transport,
                     )
                     continue
                 command = cfg.get("command")
@@ -99,6 +106,51 @@ class MCPClientManager:
             raise
         self._initialized = True
         return len(self._sessions) > 0
+
+    async def _connect_sse(self, server_id: str, cfg: Dict[str, Any], ClientSession: Any) -> None:
+        """
+        Connect to an MCP server over HTTP SSE transport (P1.2).
+        Requires the 'mcp' package with SSE client support.
+        Config keys: url (required), headers (optional dict).
+        """
+        url = cfg.get("url")
+        if not url:
+            logger.warning("MCP server %s: SSE transport requires 'url'", server_id)
+            return
+        try:
+            from mcp.client.sse import sse_client
+        except ImportError:
+            logger.warning(
+                "MCP server %s: SSE transport requires mcp[sse] — install with 'pip install mcp[sse]'",
+                server_id,
+            )
+            return
+        try:
+            headers = cfg.get("headers") or {}
+            sse_transport = await self._exit_stack.enter_async_context(
+                sse_client(url, headers=headers)
+            )
+            read_stream, write_stream = sse_transport
+            session = await self._exit_stack.enter_async_context(
+                ClientSession(read_stream, write_stream)
+            )
+            await session.initialize()
+            self._sessions[server_id] = session
+            response = await session.list_tools()
+            tools = [
+                {
+                    "name": t.name,
+                    "description": t.description or "",
+                    "inputSchema": getattr(t, "inputSchema", None) or {},
+                }
+                for t in response.tools
+            ]
+            self._tools_cache[server_id] = tools
+            logger.info(
+                "MCP server %s connected via SSE (%s) with %d tools", server_id, url, len(tools)
+            )
+        except Exception as e:
+            logger.exception("Failed to connect to MCP server %s via SSE: %s", server_id, e)
 
     async def shutdown(self) -> None:
         """Close all MCP connections."""

@@ -92,7 +92,7 @@ class TestHealthEndpoint:
 class TestAgentsEndpoint:
     """Test cases for agents endpoints."""
 
-    def test_list_agents_success(self, client, mock_service_container):
+    def test_list_agents_success(self, client, mock_service_container, api_key_disabled):
         """Test listing agents endpoint."""
         with patch(
             "app.api.v1.routes.agents.get_service_container", return_value=mock_service_container
@@ -113,7 +113,7 @@ class TestAgentsEndpoint:
         # Should require API key
         assert response.status_code in [401, 403]
 
-    def test_get_agent_detail_success(self, client, mock_service_container):
+    def test_get_agent_detail_success(self, client, mock_service_container, api_key_disabled):
         """Test getting agent details."""
         with patch(
             "app.api.v1.routes.agents.get_service_container", return_value=mock_service_container
@@ -128,7 +128,7 @@ class TestAgentsEndpoint:
                 assert "agent" in data
                 assert data["agent"]["agent_id"] == "network_diagnostics"
 
-    def test_get_agent_not_found(self, client, mock_service_container):
+    def test_get_agent_not_found(self, client, mock_service_container, api_key_disabled):
         """Test getting non-existent agent."""
         with patch(
             "app.api.v1.routes.agents.get_service_container", return_value=mock_service_container

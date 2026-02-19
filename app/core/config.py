@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     otel_enabled: bool = Field(default=False, alias="OTEL_ENABLED")
     # OTLP endpoint for traces (e.g. http://localhost:4318/v1/traces). Empty = use SDK default.
     otel_exporter_otlp_endpoint: str = Field(default="", alias="OTEL_EXPORTER_OTLP_ENDPOINT")
+    # Optional: ChromaDB persistence directory. Empty = in-memory (data lost on restart).
+    # Set to a path like /app/data/chroma to persist RAG documents across restarts.
+    chroma_persist_directory: str = Field(default="", alias="CHROMA_PERSIST_DIRECTORY")
 
     @property
     def cors_origins_list(self) -> List[str]:

@@ -20,7 +20,7 @@ class TestCostTracker:
 
     def test_initialization(self, cost_tracker: CostTracker):
         """Test cost tracker initialization."""
-        assert cost_tracker._records == []
+        assert len(cost_tracker._records) == 0
         assert cost_tracker._alerts_enabled is True
 
     def test_calculate_cost_bedrock(self, cost_tracker: CostTracker):

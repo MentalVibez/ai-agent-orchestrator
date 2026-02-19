@@ -1,6 +1,6 @@
 """LLM cost tracking and analytics."""
 
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from threading import RLock
@@ -41,9 +41,12 @@ class CostTracker:
         "gpt-4-turbo": {"input": 10.00, "output": 30.00},
     }
 
+    # Cap in-memory records to prevent unbounded RAM growth; DB is the source of truth.
+    _MAX_RECORDS = 10_000
+
     def __init__(self):
         """Initialize cost tracker."""
-        self._records: List[CostRecord] = []
+        self._records: deque = deque(maxlen=self._MAX_RECORDS)
         self._lock = RLock()
         self._daily_limits: Dict[str, float] = {}  # Daily cost limits per endpoint/agent
         self._alerts_enabled = True
@@ -326,7 +329,8 @@ class CostTracker:
             List of recent CostRecord instances
         """
         with self._lock:
-            return self._records[-limit:]
+            records = list(self._records)
+            return records[-limit:]
 
     def _filter_records(
         self,
@@ -356,6 +360,12 @@ class CostTracker:
         """Clear all cost records (for testing)."""
         with self._lock:
             self._records.clear()
+
+    @property
+    def record_count(self) -> int:
+        """Number of in-memory records (capped at _MAX_RECORDS)."""
+        with self._lock:
+            return len(self._records)
 
 
 # Global cost tracker instance

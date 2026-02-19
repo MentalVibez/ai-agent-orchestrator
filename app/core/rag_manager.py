@@ -163,10 +163,16 @@ def get_rag_manager(persist_directory: Optional[str] = None) -> RAGManager:
     """
     Get (or create) the global RAGManager instance.
 
-    Args:
-        persist_directory: Passed only on first call; ignored on subsequent calls.
+    On first call: reads CHROMA_PERSIST_DIRECTORY from settings unless
+    persist_directory is explicitly provided. In-memory when empty/None.
     """
     global _rag_manager
     if _rag_manager is None:
+        if persist_directory is None:
+            try:
+                from app.core.config import settings
+                persist_directory = settings.chroma_persist_directory or None
+            except Exception:
+                persist_directory = None
         _rag_manager = RAGManager(persist_directory=persist_directory)
     return _rag_manager

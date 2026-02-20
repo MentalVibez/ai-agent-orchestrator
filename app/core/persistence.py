@@ -1,7 +1,7 @@
 """Persistence layer for storing execution history and agent state."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.db.database import SessionLocal
@@ -70,7 +70,7 @@ def _save_agent_state_sync(agent_id: str, state_data: Dict[str, Any]) -> AgentSt
         existing = db.query(AgentState).filter(AgentState.agent_id == agent_id).first()
         if existing:
             existing.state_data = state_data
-            existing.last_updated = datetime.utcnow()
+            existing.last_updated = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
             db.refresh(existing)
             return existing
@@ -115,7 +115,7 @@ def _save_workflow_execution_sync(
             status=status,
             error=error,
             execution_time_ms=execution_time_ms,
-            completed_at=datetime.utcnow() if status in ["completed", "failed"] else None,
+            completed_at=datetime.now(timezone.utc).replace(tzinfo=None) if status in ["completed", "failed"] else None,
         )
         db.add(execution)
         db.commit()

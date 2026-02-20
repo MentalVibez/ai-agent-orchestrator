@@ -12,12 +12,21 @@ from app.core.config import settings
 # Docker-managed named volume and survives container restarts.
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////app/data/orchestrator.db")
 
-# Create engine
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
-    echo=settings.debug,
-)
+# Create engine — configure connection pool for PostgreSQL, keep SQLite defaults otherwise
+if "postgresql" in DATABASE_URL or "postgres" in DATABASE_URL:
+    engine = create_engine(
+        DATABASE_URL,
+        echo=settings.debug,
+        pool_size=10,
+        max_overflow=20,
+        pool_pre_ping=True,
+    )
+else:
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        echo=settings.debug,
+    )
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

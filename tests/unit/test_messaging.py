@@ -1,6 +1,6 @@
 """Unit tests for MessageBus (messaging module)."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -17,7 +17,7 @@ class TestMessage:
             recipient="agent2",
             message_type="task",
             payload={"data": "value"},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         assert msg.sender == "agent1"
         assert msg.recipient == "agent2"
@@ -29,7 +29,7 @@ class TestMessage:
             recipient="b",
             message_type="result",
             payload={},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
             message_id="msg-123",
         )
         assert msg.message_id == "msg-123"
@@ -44,21 +44,51 @@ class TestMessageBus:
         assert bus._subscribers == {}
         assert bus._message_history == []
 
-    def test_subscribe_not_implemented(self):
+    def test_subscribe_registers_callback(self):
         bus = MessageBus()
-        with pytest.raises(NotImplementedError):
-            bus.subscribe("task", lambda msg: None)
+        cb = lambda msg: None
+        bus.subscribe("task", cb)
+        assert "task" in bus._subscribers
+        assert cb in bus._subscribers["task"]
 
-    def test_publish_not_implemented(self):
+    def test_publish_stores_in_history(self):
         bus = MessageBus()
         msg = Message(
             sender="a", recipient="b", message_type="t",
-            payload={}, timestamp=datetime.utcnow()
+            payload={}, timestamp=datetime.now(timezone.utc).replace(tzinfo=None)
         )
-        with pytest.raises(NotImplementedError):
-            bus.publish(msg)
+        bus.publish(msg)
+        assert msg in bus._message_history
 
-    def test_get_history_not_implemented(self):
+    def test_publish_invokes_subscriber(self):
         bus = MessageBus()
-        with pytest.raises(NotImplementedError):
-            bus.get_history()
+        received = []
+        bus.subscribe("task", lambda m: received.append(m))
+        msg = Message(
+            sender="a", recipient="b", message_type="task",
+            payload={"x": 1}, timestamp=datetime.now(timezone.utc).replace(tzinfo=None)
+        )
+        bus.publish(msg)
+        assert received == [msg]
+
+    def test_publish_no_subscriber_does_not_raise(self):
+        bus = MessageBus()
+        msg = Message(
+            sender="a", recipient="b", message_type="unknown",
+            payload={}, timestamp=datetime.now(timezone.utc).replace(tzinfo=None)
+        )
+        bus.publish(msg)  # should not raise
+
+    def test_get_history_returns_all(self):
+        bus = MessageBus()
+        for i in range(5):
+            bus.publish(Message("a", "b", "t", {"i": i}, datetime.now(timezone.utc).replace(tzinfo=None)))
+        assert len(bus.get_history()) == 5
+
+    def test_get_history_with_limit(self):
+        bus = MessageBus()
+        for i in range(10):
+            bus.publish(Message("a", "b", "t", {"i": i}, datetime.now(timezone.utc).replace(tzinfo=None)))
+        result = bus.get_history(limit=3)
+        assert len(result) == 3
+        assert result[-1].payload["i"] == 9

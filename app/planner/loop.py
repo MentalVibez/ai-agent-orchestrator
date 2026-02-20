@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.core.config import settings
@@ -215,7 +215,7 @@ Respond with exactly one JSON object, no other text. Choose one:
                     answer=answer,
                     steps=steps,
                     tool_calls=tool_calls_records,
-                    completed_at=datetime.utcnow(),
+                    completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
                 )
                 await append_run_event(run_id, "step", step_data)
                 await append_run_event(run_id, "status", {"status": "completed"})
@@ -248,7 +248,20 @@ Respond with exactly one JSON object, no other text. Choose one:
                     return
                 with trace_tool_call(run_id, server_id, tool_name):
                     try:
-                        result = await mcp_manager.call_tool(server_id, tool_name, arguments)
+                        tool_timeout = settings.planner_tool_timeout_seconds
+                        if tool_timeout > 0:
+                            result = await asyncio.wait_for(
+                                mcp_manager.call_tool(server_id, tool_name, arguments),
+                                timeout=float(tool_timeout),
+                            )
+                        else:
+                            result = await mcp_manager.call_tool(server_id, tool_name, arguments)
+                    except asyncio.TimeoutError:
+                        timeout_msg = (
+                            f"[TIMEOUT] Tool {tool_name} did not respond within "
+                            f"{settings.planner_tool_timeout_seconds}s"
+                        )
+                        result = {"content": [{"type": "text", "text": timeout_msg}], "isError": True}
                     except Exception as e:
                         result = {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
                 result_text = ""
@@ -304,7 +317,7 @@ Respond with exactly one JSON object, no other text. Choose one:
         answer=answer_max,
         steps=steps,
         tool_calls=tool_calls_records,
-        completed_at=datetime.utcnow(),
+        completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     await append_run_event(run_id, "status", {"status": "completed"})
     await append_run_event(run_id, "answer", {"answer": answer_max})
@@ -316,17 +329,24 @@ async def run_planner_loop(
     agent_profile_id: str,
     context: Optional[Dict[str, Any]] = None,
     llm_generate: Optional[Any] = None,
+    request_id: Optional[str] = None,
+    llm_manager: Optional[Any] = None,
 ) -> None:
     """
     Run the planner loop for the given run. Updates run in DB (steps, tool_calls, status, answer).
-    If no MCP tools are available for the profile, falls back to legacy orchestrator and sets answer.
+    If no MCP tools are available for the profile, fails the run with a descriptive error.
     llm_generate: async callable(prompt, system_prompt) -> str
+    request_id: optional correlation ID from the originating HTTP request (for log tracing)
+    llm_manager: optional LLMManager instance; used when llm_generate is not provided.
+                 Falls back to the global service container for backward compat (e.g. arq worker).
     """
+    _req_tag = f"[req:{request_id}] " if request_id else ""
     if llm_generate is None:
-        from app.core.services import get_service_container
+        if llm_manager is None:
+            from app.core.services import get_service_container  # backward compat for arq worker
 
-        container = get_service_container()
-        llm = container._llm_manager.get_provider()
+            llm_manager = get_service_container().get_llm_manager()
+        llm = llm_manager.get_provider()
 
         async def _gen(prompt: str, system_prompt: Optional[str] = None) -> str:
             return await llm.generate(prompt=prompt, system_prompt=system_prompt)
@@ -357,42 +377,24 @@ async def run_planner_loop(
     mcp_manager = get_mcp_client_manager()
     tools = mcp_manager.get_tools_for_profile(agent_profile_id) if mcp_manager._initialized else []
 
-    # If no MCP tools, delegate to legacy orchestrator (use filtered goal for consistency)
+    # No MCP tools configured for this profile — fail immediately with a clear error
     if not tools:
-        from app.core.services import get_service_container
-        from app.models.agent import AgentResult
-
-        container = get_service_container()
-        orchestrator = container.get_orchestrator()
-        result: AgentResult = await orchestrator.route_task(goal_for_prompt, context)
-        answer = ""
-        if result.success and result.output:
-            answer = (
-                str(result.output)
-                if not isinstance(result.output, dict)
-                else json.dumps(result.output, default=str)
-            )
-        else:
-            answer = result.error or "Orchestrator did not return a result."
+        logger.error(
+            "No MCP tools available for profile '%s'. "
+            "Add MCP server IDs to allowed_mcp_servers in config/agent_profiles.yaml.",
+            agent_profile_id,
+        )
         await update_run(
             run_id,
-            status="completed",
-            answer=answer,
-            steps=[
-                {
-                    "step_index": 1,
-                    "kind": "finish",
-                    "finish_answer": answer,
-                    "raw_response": "Legacy orchestrator",
-                }
-            ],
-            tool_calls=[],
-            completed_at=datetime.utcnow(),
+            status="failed",
+            error=(
+                f"No MCP tools available for agent profile '{agent_profile_id}'. "
+                "Configure allowed_mcp_servers in config/agent_profiles.yaml."
+            ),
         )
-        await append_run_event(run_id, "status", {"status": "completed"})
-        await append_run_event(run_id, "answer", {"answer": answer})
         return
 
+    logger.info("%sStarting planner loop run_id=%s profile=%s", _req_tag, run_id, agent_profile_id)
     await update_run(run_id, status="running")
     await append_run_event(run_id, "status", {"status": "running"})
     steps: List[Dict[str, Any]] = []
@@ -425,10 +427,12 @@ async def run_planner_loop(
 async def execute_approved_tool_and_update_run(
     run_id: str,
     modified_arguments: Optional[Dict[str, Any]] = None,
+    approver_id: str = "unknown",
 ) -> bool:
     """
     Execute the pending tool call (with optional modified_arguments), append to run steps/tool_calls,
     clear pending_tool_call, set status running. Returns True on success.
+    approver_id: identifier of the approver (e.g. API key prefix) for audit logging.
     """
     run = await get_run_by_id(run_id)
     if not run or run.status != "awaiting_approval" or not run.pending_tool_call:
@@ -486,13 +490,27 @@ async def execute_approved_tool_and_update_run(
     )
     await append_run_event(run_id, "step", step_data)
     await append_run_event(run_id, "status", {"status": "running"})
+    # Audit trail: record who approved, when, and whether arguments were modified
+    await append_run_event(
+        run_id,
+        "audit",
+        {
+            "action": "tool_approved",
+            "tool_name": tool_name,
+            "server_id": server_id,
+            "approver_id": approver_id,
+            "arguments_modified": modified_arguments is not None,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
     return True
 
 
-async def resume_planner_loop(run_id: str) -> None:
+async def resume_planner_loop(run_id: str, llm_manager: Optional[Any] = None) -> None:
     """
     Resume the planner after a pending tool call was approved and executed.
     Loads run state (steps, tool_calls), reconstructs conversation, and continues from the next step.
+    llm_manager: optional LLMManager; falls back to global service container (for arq worker compat).
     """
     run = await get_run_by_id(run_id)
     if not run or run.status != "running":
@@ -516,9 +534,11 @@ async def resume_planner_loop(run_id: str) -> None:
     conversation = _conversation_from_steps_and_tool_calls(steps, tool_calls_records)
     approval_required_tools = (profile or {}).get("approval_required_tools") or []
     stream_tokens = (run.context or {}).get("_stream_tokens") is True
-    from app.core.services import get_service_container
-    container = get_service_container()
-    llm = container._llm_manager.get_provider()
+    if llm_manager is None:
+        from app.core.services import get_service_container  # backward compat for arq worker
+
+        llm_manager = get_service_container().get_llm_manager()
+    llm = llm_manager.get_provider()
 
     async def _gen(prompt: str, system_prompt: Optional[str] = None) -> str:
         return await llm.generate(prompt=prompt, system_prompt=system_prompt)

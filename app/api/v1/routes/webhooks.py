@@ -74,10 +74,17 @@ def _verify_webhook_signature(body_bytes: bytes, request: Request) -> bool:
     """
     secret = getattr(settings, "webhook_secret", "")
     if not secret:
-        # Webhook auth not configured — allow (but log a warning)
+        if settings.webhook_require_auth:
+            logger.error(
+                "WEBHOOK_SECRET is not set but WEBHOOK_REQUIRE_AUTH=True. "
+                "Rejecting webhook request. Set WEBHOOK_SECRET or set "
+                "WEBHOOK_REQUIRE_AUTH=False to allow unauthenticated webhooks."
+            )
+            return False
+        # Auth explicitly disabled — allow but warn
         logger.warning(
-            "WEBHOOK_SECRET not configured — webhook endpoint is unauthenticated. "
-            "Set WEBHOOK_SECRET in environment for production use."
+            "WEBHOOK_SECRET not configured and WEBHOOK_REQUIRE_AUTH=False — "
+            "webhook endpoint is unauthenticated. Not recommended for production."
         )
         return True
 
@@ -218,12 +225,16 @@ async def prometheus_webhook(
         agent_profile_id=agent_profile_id,
         context={"source": "prometheus_webhook", "alerts": firing[:3]},
     )
+    req_id = getattr(request.state, "request_id", None)
+    llm_manager = request.app.state.container.get_llm_manager()
     asyncio.create_task(
         run_planner_loop(
             run_id=run.run_id,
             goal=goal,
             agent_profile_id=agent_profile_id,
             context=run.context or {},
+            request_id=req_id,
+            llm_manager=llm_manager,
         )
     )
 

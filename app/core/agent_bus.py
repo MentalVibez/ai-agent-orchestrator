@@ -4,6 +4,8 @@ import asyncio
 import logging
 from typing import Dict, Optional
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,7 +20,7 @@ class AgentMessageBus:
 
     def _get_or_create_queue(self, agent_id: str) -> asyncio.Queue:
         if agent_id not in self._queues:
-            self._queues[agent_id] = asyncio.Queue()
+            self._queues[agent_id] = asyncio.Queue(maxsize=settings.agent_bus_queue_maxsize)
         return self._queues[agent_id]
 
     async def publish(self, target_agent_id: str, message: dict) -> None:

@@ -1,6 +1,6 @@
 """Unit tests for Cost Tracker."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -101,8 +101,8 @@ class TestCostTracker:
         """Test getting total cost with date range."""
         cost_tracker.record_cost("bedrock", "model", 1000, 500)
 
-        start = datetime.utcnow() - timedelta(days=1)
-        end = datetime.utcnow() + timedelta(days=1)
+        start = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+        end = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1)
 
         total = cost_tracker.get_total_cost(start, end)
 

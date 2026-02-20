@@ -158,13 +158,25 @@ class TestRecordAlert:
 class TestVerifyWebhookSignature:
     """Test _verify_webhook_signature utility function."""
 
-    def test_no_secret_configured_returns_true(self):
-        """When no secret is set, allow all webhooks."""
+    def test_no_secret_with_require_auth_true_returns_false(self):
+        """When no secret is set and webhook_require_auth=True (default), reject all webhooks."""
         from unittest.mock import MagicMock, patch
 
         mock_request = MagicMock()
         with patch("app.api.v1.routes.webhooks.settings") as mock_settings:
             mock_settings.webhook_secret = ""
+            mock_settings.webhook_require_auth = True
+            result = _verify_webhook_signature(b"body", mock_request)
+        assert result is False
+
+    def test_no_secret_with_require_auth_false_returns_true(self):
+        """When no secret is set and WEBHOOK_REQUIRE_AUTH=False, allow all webhooks."""
+        from unittest.mock import MagicMock, patch
+
+        mock_request = MagicMock()
+        with patch("app.api.v1.routes.webhooks.settings") as mock_settings:
+            mock_settings.webhook_secret = ""
+            mock_settings.webhook_require_auth = False
             result = _verify_webhook_signature(b"body", mock_request)
         assert result is True
 

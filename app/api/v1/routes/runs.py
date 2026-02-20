@@ -53,12 +53,16 @@ async def start_run(
         context=context,
     )
     if not enqueued:
+        req_id = getattr(request.state, "request_id", None)
+        llm_manager = request.app.state.container.get_llm_manager()
         asyncio.create_task(
             run_planner_loop(
                 run_id=run.run_id,
                 goal=goal,
                 agent_profile_id=profile_id,
                 context=context,
+                request_id=req_id,
+                llm_manager=llm_manager,
             )
         )
     return RunResponse(
@@ -99,13 +103,16 @@ async def approve_run(
             _clear_pending_tool_call=True,
         )
         return {"run_id": run_id, "status": "failed", "message": "Rejected."}
+    approver_id = request.headers.get("X-API-Key", "unknown")
     ok = await execute_approved_tool_and_update_run(
         run_id,
         modified_arguments=body.modified_arguments,
+        approver_id=approver_id,
     )
     if not ok:
         return {"run_id": run_id, "status": run.status, "message": "Could not execute approved tool."}
-    asyncio.create_task(resume_planner_loop(run_id))
+    llm_mgr = request.app.state.container.get_llm_manager()
+    asyncio.create_task(resume_planner_loop(run_id, llm_manager=llm_mgr))
     return {"run_id": run_id, "status": "running", "message": "Approved; planner resuming."}
 
 

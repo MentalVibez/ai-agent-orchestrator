@@ -1,6 +1,6 @@
 """Database models for persistence."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, String, Text
 from sqlalchemy.sql import func
@@ -172,7 +172,7 @@ class CostRecordDB(Base):
     agent_id = Column(String, nullable=True)
     endpoint = Column(String, nullable=True)
     request_id = Column(String, nullable=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""

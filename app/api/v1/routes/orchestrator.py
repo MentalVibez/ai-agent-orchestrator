@@ -4,11 +4,11 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from app.api.deps import get_orchestrator, get_workflow_executor
 from app.core.auth import verify_api_key
 from app.core.config import settings
 from app.core.orchestrator import Orchestrator
 from app.core.rate_limit import limiter
-from app.core.services import get_service_container
 from app.core.validation import validate_agent_ids, validate_context, validate_task
 from app.core.workflow_executor import WorkflowExecutor
 from app.models.request import (
@@ -21,28 +21,6 @@ from app.models.request import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["orchestrator"])
-
-
-def get_orchestrator() -> Orchestrator:
-    """
-    Dependency to get orchestrator instance.
-
-    Returns:
-        Orchestrator instance
-    """
-    container = get_service_container()
-    return container.get_orchestrator()
-
-
-def get_workflow_executor() -> WorkflowExecutor:
-    """
-    Dependency to get workflow executor instance.
-
-    Returns:
-        WorkflowExecutor instance
-    """
-    container = get_service_container()
-    return container.get_workflow_executor()
 
 
 @router.post("/orchestrate", response_model=OrchestrateResponse)

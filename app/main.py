@@ -15,6 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.v1.routes import agents, metrics, orchestrator, runs, webhooks
 from app.api.v1.routes import rag as rag_routes
 from app.core.auth import verify_api_key
+from app.middleware.request_id import RequestIDMiddleware
 from app.core.config import settings
 from app.core.exceptions import (
     AgentError,
@@ -50,9 +51,21 @@ async def lifespan(app: FastAPI):
         logger.info(f"LLM Provider: {settings.llm_provider}")
         logger.info(f"Debug Mode: {settings.debug}")
 
+        # Warn if running SQLite in a non-debug (production-like) environment
+        from app.db.database import DATABASE_URL as _db_url
+
+        if "sqlite" in _db_url.lower() and not settings.debug:
+            logger.warning(
+                "SQLite is configured as the database but DEBUG=False. "
+                "SQLite is not suitable for production (single writer, no horizontal scaling). "
+                "Set DATABASE_URL to a PostgreSQL connection string for production deployments."
+            )
+
         # Initialize service container (this will initialize all services)
         container = get_service_container()
         container.initialize()
+        # Store on app.state so FastAPI Depends() can inject it without the global
+        app.state.container = container
 
         # Log initialized services
         agent_registry = container.get_agent_registry()
@@ -79,8 +92,8 @@ async def lifespan(app: FastAPI):
                     and not default_profile.get("allowed_mcp_servers")
                 ):
                     logger.warning(
-                        "Default agent profile has allowed_mcp_servers: []. "
-                        "POST /run will use legacy agents only. Add MCP server IDs to "
+                        "Default agent profile has no allowed_mcp_servers configured. "
+                        "POST /run will fail — runs require MCP tools. Add MCP server IDs to "
                         "config/agent_profiles.yaml (default.allowed_mcp_servers) to use MCP tools."
                     )
         except Exception as e:
@@ -355,7 +368,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-# Add middleware (order matters - logging first, then security)
+# Add middleware (order matters — RequestID first so all subsequent middleware can read it)
+app.add_middleware(RequestIDMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -456,7 +470,7 @@ async def health_check(request: Request) -> HealthResponse:
         HealthResponse with status: healthy | degraded | unhealthy
     """
     try:
-        container = get_service_container()
+        container = request.app.state.container
         agent_registry = container.get_agent_registry()
         agents_list = agent_registry.get_all()
         agents_count = len(agents_list)
@@ -475,7 +489,7 @@ async def health_check(request: Request) -> HealthResponse:
         # Check LLM provider is initialized
         llm_ok = False
         try:
-            llm_manager = container._llm_manager
+            llm_manager = container.get_llm_manager()
             provider = llm_manager.get_provider() if llm_manager else None
             llm_ok = provider is not None
         except Exception as e:

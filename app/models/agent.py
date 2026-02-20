@@ -1,6 +1,6 @@
 """Pydantic models for agents."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -33,4 +33,4 @@ class AgentResult(BaseModel):
     output: Any = Field(..., description="Output data from agent")
     error: Optional[str] = Field(None, description="Error message if execution failed")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Execution timestamp")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), description="Execution timestamp")

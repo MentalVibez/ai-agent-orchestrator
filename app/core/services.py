@@ -100,6 +100,14 @@ class ServiceContainer:
             raise RuntimeError("Workflow executor not initialized")
         return self._workflow_executor
 
+    def get_llm_manager(self) -> LLMManager:
+        """Get the LLM manager."""
+        if not self._initialized:
+            self.initialize()
+        if not self._llm_manager:
+            raise RuntimeError("LLM manager not initialized")
+        return self._llm_manager
+
     def shutdown(self) -> None:
         """Shutdown and cleanup services."""
         # Cleanup if needed

@@ -4,28 +4,17 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from app.api.deps import get_agent_registry
 from app.core.agent_registry import AgentRegistry
 from app.core.auth import verify_api_key
 from app.core.config import settings
 from app.core.rate_limit import limiter
-from app.core.services import get_service_container
 from app.models.agent import AgentInfo
 from app.models.request import AgentDetailResponse, AgentsListResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["agents"])
-
-
-def get_agent_registry() -> AgentRegistry:
-    """
-    Dependency to get agent registry instance.
-
-    Returns:
-        AgentRegistry instance
-    """
-    container = get_service_container()
-    return container.get_agent_registry()
 
 
 @router.get("/agents", response_model=AgentsListResponse)

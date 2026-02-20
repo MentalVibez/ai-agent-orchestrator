@@ -1,5 +1,6 @@
 """Unit tests for app/planner/loop.py — planner response parsing and step execution."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -147,10 +148,10 @@ class TestRunPlannerLoop:
     @patch("app.planner.loop.get_agent_profile")
     @patch("app.planner.loop.update_run")
     @patch("app.planner.loop.append_run_event")
-    async def test_no_mcp_tools_falls_back_to_orchestrator(
+    async def test_no_mcp_tools_fails_with_descriptive_error(
         self, mock_append, mock_update, mock_profile, mock_mcp
     ):
-        """When no MCP tools configured, planner delegates to legacy orchestrator."""
+        """When no MCP tools configured, planner fails the run with a descriptive error."""
         from app.planner.loop import run_planner_loop
 
         mock_update.return_value = None
@@ -162,27 +163,18 @@ class TestRunPlannerLoop:
         mcp_manager.get_tools_for_profile.return_value = []  # no tools
         mock_mcp.return_value = mcp_manager
 
-        # Mock the legacy orchestrator path
-        mock_result = MagicMock()
-        mock_result.success = True
-        mock_result.output = "Legacy answer"
-        mock_result.error = None
+        async def _dummy_llm(prompt, system_prompt=None):
+            return "{}"
 
-        with patch("app.core.services.get_service_container") as mock_svc:
-            container = MagicMock()
-            orchestrator = AsyncMock()
-            orchestrator.route_task.return_value = mock_result
-            container.get_orchestrator.return_value = orchestrator
-            container._llm_manager.get_provider.return_value = AsyncMock()
-            mock_svc.return_value = container
-
-            await run_planner_loop("run-1", "Check network", "default")
+        await run_planner_loop("run-1", "Check network", "default", llm_generate=_dummy_llm)
 
         mock_update.assert_called()
-        # Last update_run call should mark status=completed
         calls = mock_update.call_args_list
-        statuses = [c.kwargs.get("status") or (c.args[1] if len(c.args) > 1 else None) for c in calls]
-        assert "completed" in statuses
+        statuses = [c.kwargs.get("status") for c in calls]
+        assert "failed" in statuses
+        # Verify error message describes what to do
+        error_calls = [c for c in calls if c.kwargs.get("status") == "failed"]
+        assert any("No MCP tools" in (c.kwargs.get("error") or "") for c in error_calls)
 
     @patch("app.planner.loop.get_mcp_client_manager")
     @patch("app.planner.loop.get_agent_profile")
@@ -217,7 +209,7 @@ class TestRunPlannerLoop:
             llm = AsyncMock()
             llm.generate.return_value = finish_json
             container = MagicMock()
-            container._llm_manager.get_provider.return_value = llm
+            container.get_llm_manager.return_value.get_provider.return_value = llm
             mock_svc.return_value = container
 
             await run_planner_loop("run-2", "Check network", "default")
@@ -269,7 +261,7 @@ class TestRunPlannerLoop:
             llm = MagicMock()
             llm.generate = fake_generate
             container = MagicMock()
-            container._llm_manager.get_provider.return_value = llm
+            container.get_llm_manager.return_value.get_provider.return_value = llm
             mock_svc.return_value = container
 
             await run_planner_loop("run-3", "Check network", "default")
@@ -308,7 +300,7 @@ class TestRunPlannerLoop:
 
         with patch("app.core.services.get_service_container") as mock_svc:
             container = MagicMock()
-            container._llm_manager.get_provider.return_value = AsyncMock()
+            container.get_llm_manager.return_value.get_provider.return_value = AsyncMock()
             mock_svc.return_value = container
 
             await run_planner_loop("run-4", "Do something", "default")
@@ -354,7 +346,7 @@ class TestRunPlannerLoop:
             llm = MagicMock()
             llm.generate = AsyncMock(return_value=tool_json)
             container = MagicMock()
-            container._llm_manager.get_provider.return_value = llm
+            container.get_llm_manager.return_value.get_provider.return_value = llm
             mock_svc.return_value = container
 
             await run_planner_loop("run-5", "Do something dangerous", "default")
@@ -362,6 +354,93 @@ class TestRunPlannerLoop:
         update_calls = mock_update.call_args_list
         statuses = [c.kwargs.get("status") for c in update_calls]
         assert "awaiting_approval" in statuses
+
+    @patch("app.planner.loop.get_mcp_client_manager")
+    @patch("app.planner.loop.get_agent_profile")
+    @patch("app.planner.loop.update_run")
+    @patch("app.planner.loop.append_run_event")
+    @patch("app.planner.loop.get_run_by_id")
+    async def test_max_steps_auto_completes_run(
+        self, mock_get_run, mock_append, mock_update, mock_profile, mock_mcp
+    ):
+        """Planner marks run completed with fallback answer after MAX_PLANNER_STEPS."""
+        from app.planner.loop import run_planner_loop
+
+        mock_update.return_value = None
+        mock_append.return_value = None
+        mock_profile.return_value = {"role_prompt": "You are helpful.", "approval_required_tools": []}
+
+        mock_run = MagicMock()
+        mock_run.status = "running"
+        mock_get_run.return_value = mock_run
+
+        mcp_manager = MagicMock()
+        mcp_manager._initialized = True
+        mcp_manager.get_tools_for_profile.return_value = [
+            {"server_id": "s", "name": "t", "description": "tool"}
+        ]
+        mock_mcp.return_value = mcp_manager
+
+        # Always return an unparseable response so the loop never finishes naturally
+        async def _unparseable(prompt, system_prompt=None):
+            return "I cannot decide yet."
+
+        await run_planner_loop("run-6", "Long task", "default", llm_generate=_unparseable)
+
+        update_calls = mock_update.call_args_list
+        statuses = [c.kwargs.get("status") for c in update_calls]
+        assert "completed" in statuses
+        # Check the max-steps answer was used
+        answers = [c.kwargs.get("answer") for c in update_calls if c.kwargs.get("answer")]
+        assert any("maximum steps" in (a or "") for a in answers)
+
+    @patch("app.planner.loop.get_mcp_client_manager")
+    @patch("app.planner.loop.get_agent_profile")
+    @patch("app.planner.loop.update_run")
+    @patch("app.planner.loop.append_run_event")
+    @patch("app.planner.loop.get_run_by_id")
+    async def test_tool_timeout_continues_loop(
+        self, mock_get_run, mock_append, mock_update, mock_profile, mock_mcp
+    ):
+        """Tool execution timeout is recorded as an error step and the loop continues."""
+        from app.planner.loop import run_planner_loop
+        from app.core.config import settings
+
+        mock_update.return_value = None
+        mock_append.return_value = None
+        mock_profile.return_value = {"role_prompt": "You are helpful.", "approval_required_tools": []}
+
+        mock_run = MagicMock()
+        mock_run.status = "running"
+        mock_get_run.return_value = mock_run
+
+        mcp_manager = MagicMock()
+        mcp_manager._initialized = True
+        mcp_manager.get_tools_for_profile.return_value = [
+            {"server_id": "net", "name": "ping", "description": "Ping"}
+        ]
+        # call_tool raises TimeoutError
+        mcp_manager.call_tool = AsyncMock(side_effect=asyncio.TimeoutError())
+        mock_mcp.return_value = mcp_manager
+
+        tool_json = '{"action": "tool_call", "server_id": "net", "tool_name": "ping", "arguments": {}}'
+        finish_json = '{"action": "finish", "answer": "Done despite timeout."}'
+        responses = iter([tool_json, finish_json])
+
+        async def fake_generate(prompt, system_prompt=None):
+            return next(responses)
+
+        original_timeout = settings.planner_tool_timeout_seconds
+        try:
+            settings.planner_tool_timeout_seconds = 1  # allow wait_for to wrap
+            await run_planner_loop("run-7", "Check network", "default", llm_generate=fake_generate)
+        finally:
+            settings.planner_tool_timeout_seconds = original_timeout
+
+        update_calls = mock_update.call_args_list
+        statuses = [c.kwargs.get("status") for c in update_calls]
+        # Loop should continue after timeout and eventually complete
+        assert "completed" in statuses
 
 
 @pytest.mark.unit

@@ -33,8 +33,9 @@ class MessageBus:
             message_type: Type of message to subscribe to
             callback: Callback function to invoke when message is received
         """
-        # TODO: Implement message subscription
-        raise NotImplementedError("subscribe method must be implemented")
+        if message_type not in self._subscribers:
+            self._subscribers[message_type] = []
+        self._subscribers[message_type].append(callback)
 
     def publish(self, message: Message) -> None:
         """
@@ -43,11 +44,9 @@ class MessageBus:
         Args:
             message: Message to publish
         """
-        # TODO: Implement message publishing
-        # 1. Store message in history
-        # 2. Find subscribers for message type
-        # 3. Invoke subscriber callbacks
-        raise NotImplementedError("publish method must be implemented")
+        self._message_history.append(message)
+        for callback in self._subscribers.get(message.message_type, []):
+            callback(message)
 
     def get_history(self, limit: Optional[int] = None) -> List[Message]:
         """
@@ -59,5 +58,6 @@ class MessageBus:
         Returns:
             List of messages
         """
-        # TODO: Implement message history retrieval
-        raise NotImplementedError("get_history method must be implemented")
+        if limit is None:
+            return list(self._message_history)
+        return list(self._message_history[-limit:])

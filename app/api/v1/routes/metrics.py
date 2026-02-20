@@ -1,7 +1,7 @@
 """API routes for metrics and cost tracking."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -43,7 +43,7 @@ async def get_cost_metrics(
         cost_tracker = get_cost_tracker()
 
         # Calculate date range
-        end_date = datetime.utcnow()
+        end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=days)
 
         # Get metrics
@@ -133,7 +133,7 @@ async def get_daily_cost(
         if date:
             target_date = datetime.strptime(date, "%Y-%m-%d").date()
         else:
-            target_date = datetime.utcnow().date()
+            target_date = datetime.now(timezone.utc).date()
 
         daily_cost = cost_tracker.get_daily_cost(
             date=target_date, endpoint=endpoint, agent_id=agent_id

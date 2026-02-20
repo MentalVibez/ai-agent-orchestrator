@@ -1,6 +1,6 @@
 """Pydantic models for workflows."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -58,7 +58,7 @@ class WorkflowStepResult(BaseModel):
     error: Optional[str] = Field(None, description="Error message if step failed")
     duration: Optional[float] = Field(None, description="Step execution duration in seconds")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Step execution timestamp"
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), description="Step execution timestamp"
     )
 
 
@@ -76,5 +76,5 @@ class WorkflowResult(BaseModel):
         None, description="Total workflow execution duration in seconds"
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Workflow execution timestamp"
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), description="Workflow execution timestamp"
     )

@@ -37,7 +37,7 @@ def _save_session_state_sync(
     agent_id: str, state: Dict[str, Any], run_id: Optional[str] = None
 ) -> None:
     """Synchronous helper — runs in thread pool via asyncio.to_thread."""
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     from app.db.database import SessionLocal
     from app.db.models import AgentState
@@ -48,7 +48,7 @@ def _save_session_state_sync(
         existing = db.query(AgentState).filter(AgentState.agent_id == key).first()
         if existing:
             existing.state_data = state
-            existing.last_updated = datetime.utcnow()
+            existing.last_updated = datetime.now(timezone.utc).replace(tzinfo=None)
         else:
             db.add(AgentState(agent_id=key, state_data=state))
         db.commit()

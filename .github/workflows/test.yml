@@ -61,8 +61,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Run tests with pytest
-        run: |
-          pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
+        run: pytest tests/
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
@@ -71,3 +70,29 @@ jobs:
           name: codecov-umbrella
           fail_ci_if_error: false
 
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run Alembic migrations (SQLite smoke-test)
+        env:
+          DATABASE_URL: sqlite:///./ci_test.db
+        run: alembic upgrade head
+      - name: Verify downgrade works
+        env:
+          DATABASE_URL: sqlite:///./ci_test.db
+        run: alembic downgrade base
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t ai-agent-orchestrator:ci .

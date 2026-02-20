@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Webhook secret for HMAC-SHA256 validation of Prometheus Alertmanager payloads.
     # Set to a strong random string (e.g. openssl rand -hex 32). Empty = webhook auth disabled.
     webhook_secret: str = Field(default="", alias="WEBHOOK_SECRET")
+    # When True (default), reject webhook requests if WEBHOOK_SECRET is not configured.
+    # Set to False to allow unauthenticated webhooks (not recommended for production).
+    webhook_require_auth: bool = Field(default=True, alias="WEBHOOK_REQUIRE_AUTH")
     # Restrict file tools (read, list, search, metadata) to paths under this directory. Empty = use process cwd.
     agent_workspace_root: str = Field(default="", alias="AGENT_WORKSPACE_ROOT")
     # Best-effort prompt injection filter: redact blocklist phrases in user goal/context. Set false to disable.
@@ -59,6 +62,8 @@ class Settings(BaseSettings):
     )
     # Planner: timeout per LLM call (seconds). 0 = no timeout.
     planner_llm_timeout_seconds: int = Field(default=120, alias="PLANNER_LLM_TIMEOUT_SECONDS")
+    # Planner: timeout per MCP tool execution (seconds). 0 = no timeout.
+    planner_tool_timeout_seconds: int = Field(default=60, alias="PLANNER_TOOL_TIMEOUT_SECONDS")
     # Maximum concurrent webhook-triggered runs before returning HTTP 429.
     webhook_max_concurrent_runs: int = Field(default=5, alias="WEBHOOK_MAX_CONCURRENT_RUNS")
     # Webhook alert deduplication window in seconds.
@@ -76,6 +81,8 @@ class Settings(BaseSettings):
     # Optional: ChromaDB persistence directory. Empty = in-memory (data lost on restart).
     # Set to a path like /app/data/chroma to persist RAG documents across restarts.
     chroma_persist_directory: str = Field(default="", alias="CHROMA_PERSIST_DIRECTORY")
+    # Agent message bus queue size per agent. Prevents unbounded memory growth under producer pressure.
+    agent_bus_queue_maxsize: int = Field(default=1000, alias="AGENT_BUS_QUEUE_MAXSIZE")
 
     @property
     def cors_origins_list(self) -> List[str]:

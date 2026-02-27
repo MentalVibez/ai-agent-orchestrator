@@ -146,8 +146,12 @@ class AgentSandbox:
         # Snapshot originals so the finally block can restore them exactly.
         # Only the soft limit is changed; the hard limit is left alone so that
         # a non-root process can always restore the previous soft limit.
+        # NOTE: RLIMIT_CPU is intentionally NOT set here. It is an absolute
+        # process-wide counter (not per-call), so setting it in a test
+        # environment where many calls are made can leave the soft limit lower
+        # than the current CPU usage, causing SIGXCPU during coverage reporting.
+        # The wall-clock Timer below already enforces max_execution_time.
         _orig_as: Optional[tuple] = None
-        _orig_cpu: Optional[tuple] = None
         if resource is not None:
             try:
                 if limits.max_memory_mb > 0:
@@ -157,15 +161,6 @@ class AgentSandbox:
             except (ValueError, OSError) as e:
                 logger.warning("Could not set memory limit: %s", e)
                 _orig_as = None
-            try:
-                if limits.max_cpu_time > 0:
-                    _orig_cpu = resource.getrlimit(resource.RLIMIT_CPU)
-                    resource.setrlimit(
-                        resource.RLIMIT_CPU, (int(limits.max_cpu_time), _orig_cpu[1])
-                    )
-            except (ValueError, OSError) as e:
-                logger.warning("Could not set CPU limit: %s", e)
-                _orig_cpu = None
 
         # Set execution timeout
         timeout_timer = None
@@ -234,11 +229,6 @@ class AgentSandbox:
                 if _orig_as is not None:
                     try:
                         resource.setrlimit(resource.RLIMIT_AS, _orig_as)
-                    except (ValueError, OSError):
-                        pass
-                if _orig_cpu is not None:
-                    try:
-                        resource.setrlimit(resource.RLIMIT_CPU, _orig_cpu)
                     except (ValueError, OSError):
                         pass
 

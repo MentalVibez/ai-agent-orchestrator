@@ -15,7 +15,11 @@ from app.core.run_store import create_run, get_run_by_id, get_run_events, list_r
 from app.core.validation import validate_agent_profile_id, validate_goal, validate_run_context
 from app.mcp.config_loader import get_enabled_agent_profiles, load_mcp_servers_config
 from app.models.run import ApproveRunRequest, RunDetailResponse, RunRequest, RunResponse, RunStatus
-from app.planner.loop import execute_approved_tool_and_update_run, resume_planner_loop, run_planner_loop
+from app.planner.loop import (
+    execute_approved_tool_and_update_run,
+    resume_planner_loop,
+    run_planner_loop,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
 

@@ -88,7 +88,6 @@ class TestCircuitBreakerGracefulDegradation:
         """Module must load even if pybreaker is not installed (graceful no-op)."""
         import importlib
         import sys
-        from unittest.mock import MagicMock
 
         # Temporarily hide pybreaker to test the fallback path
         original = sys.modules.get("pybreaker")

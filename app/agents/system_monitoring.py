@@ -182,8 +182,9 @@ class SystemMonitoringAgent(BaseAgent):
             metrics["platform_version"] = platform.version()
 
             # Generate LLM interpretation of real data
-            from app.core.prompt_generator import get_prompt_generator
             import json
+
+            from app.core.prompt_generator import get_prompt_generator
 
             prompt_gen = get_prompt_generator()
             enhanced_context = {**context, "metrics": metrics}

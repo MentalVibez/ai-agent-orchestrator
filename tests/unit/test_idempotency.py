@@ -7,7 +7,6 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.database import init_db
 
-
 # ---------------------------------------------------------------------------
 # Module-level in-memory DB
 # ---------------------------------------------------------------------------
@@ -81,12 +80,12 @@ class TestValidateIdempotencyKey:
             validate_idempotency_key("   ")
 
     def test_too_long_key_raises(self):
-        from app.core.idempotency import validate_idempotency_key, MAX_KEY_LENGTH
+        from app.core.idempotency import MAX_KEY_LENGTH, validate_idempotency_key
         with pytest.raises(ValueError, match="≤"):
             validate_idempotency_key("x" * (MAX_KEY_LENGTH + 1))
 
     def test_key_at_max_length_is_valid(self):
-        from app.core.idempotency import validate_idempotency_key, MAX_KEY_LENGTH
+        from app.core.idempotency import MAX_KEY_LENGTH, validate_idempotency_key
         key = "a" * MAX_KEY_LENGTH
         assert validate_idempotency_key(key) == key
 
@@ -101,8 +100,9 @@ class TestValidateIdempotencyKey:
             validate_idempotency_key("key\rinjection")
 
     def test_uuid_format_is_valid(self):
-        from app.core.idempotency import validate_idempotency_key
         import uuid
+
+        from app.core.idempotency import validate_idempotency_key
         key = str(uuid.uuid4())
         assert validate_idempotency_key(key) == key
 

@@ -30,11 +30,9 @@ Environment variables consumed:
 
 import os
 import random
-import string
 import uuid
 
 from locust import HttpUser, between, task
-
 
 API_KEY = os.getenv("LOAD_TEST_API_KEY", "change-me")
 

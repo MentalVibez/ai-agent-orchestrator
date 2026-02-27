@@ -6,7 +6,6 @@ import pytest
 
 from app.core.logging_filters import SensitiveDataFilter, _is_sensitive_key, _redact_string
 
-
 # ---------------------------------------------------------------------------
 # Tests: _redact_string (pattern-based redaction in message strings)
 # ---------------------------------------------------------------------------

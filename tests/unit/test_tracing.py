@@ -1,7 +1,7 @@
 """Unit tests for optional OpenTelemetry tracing (app.observability.tracing)."""
 
 import sys
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 

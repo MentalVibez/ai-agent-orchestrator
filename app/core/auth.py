@@ -12,9 +12,8 @@ Auth flow
 
 import hmac
 import logging
-from typing import Optional
 
-from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi import HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 
 from app.core.config import settings

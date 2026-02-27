@@ -8,7 +8,6 @@ from app.db.database import SessionLocal
 from app.db.models import AgentState, ExecutionHistory, WorkflowExecution
 from app.models.agent import AgentResult
 
-
 # ---------------------------------------------------------------------------
 # Private sync helpers (run in thread pool via asyncio.to_thread)
 # ---------------------------------------------------------------------------

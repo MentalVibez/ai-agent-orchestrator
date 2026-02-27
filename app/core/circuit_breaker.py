@@ -75,11 +75,7 @@ def is_llm_breaker_open() -> bool:
     """True when the LLM circuit is open (fast-fail mode)."""
     if _llm_breaker is None:
         return False
-    try:
-        import pybreaker
-        return _llm_breaker.current_state == "open"
-    except ImportError:
-        return False
+    return _llm_breaker.current_state == "open"
 
 
 async def call_with_llm_breaker(coro):

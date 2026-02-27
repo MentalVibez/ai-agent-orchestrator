@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.db.database import SessionLocal
 from app.db.models import Run, RunEvent
 
-
 # ---------------------------------------------------------------------------
 # Private sync helpers (run in thread pool via asyncio.to_thread)
 # ---------------------------------------------------------------------------

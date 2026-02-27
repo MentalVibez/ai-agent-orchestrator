@@ -4,7 +4,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.core.run_store import append_run_event, create_run, get_run_by_id, get_run_events, update_run
+from app.core.run_store import (
+    append_run_event,
+    create_run,
+    get_run_by_id,
+    get_run_events,
+    update_run,
+)
 
 
 @pytest.mark.unit

@@ -12,7 +12,6 @@ from app.core.config import settings
 from app.db.database import init_db
 from app.main import app
 
-
 # ---------------------------------------------------------------------------
 # Module-level DB patch (prevents "unable to open database file" on Windows)
 # ---------------------------------------------------------------------------

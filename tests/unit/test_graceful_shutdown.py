@@ -13,14 +13,11 @@ from app.middleware.graceful_shutdown import GracefulShutdownMiddleware
 def _make_app(shutdown_event: asyncio.Event | None = None) -> FastAPI:
     """Build a minimal FastAPI app with GracefulShutdownMiddleware."""
     test_app = FastAPI()
-    middleware = GracefulShutdownMiddleware(test_app, shutdown_event=shutdown_event)
-
     @test_app.get("/ping")
     async def ping():
         return PlainTextResponse("pong")
 
     # Wrap with the middleware
-    from starlette.middleware.base import BaseHTTPMiddleware
     test_app.add_middleware(GracefulShutdownMiddleware, shutdown_event=shutdown_event)
 
     return test_app

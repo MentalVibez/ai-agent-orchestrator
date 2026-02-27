@@ -1,6 +1,5 @@
 """Unit tests for app/core/api_keys.py and app/api/v1/routes/api_keys.py."""
 
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +10,6 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import settings
 from app.db.database import init_db
 from app.main import app
-
 
 # ---------------------------------------------------------------------------
 # Module-level DB patch
@@ -117,8 +115,8 @@ class TestHashKey:
 @pytest.mark.unit
 class TestCreateApiKey:
     def test_creates_record_in_db(self):
-        from app.core.api_keys import create_api_key
         import app.db.database as db_module
+        from app.core.api_keys import create_api_key
         db = db_module.SessionLocal()
         try:
             key_id, raw_key, record = create_api_key(db, name="test-key", role="operator")
@@ -130,8 +128,8 @@ class TestCreateApiKey:
             db.close()
 
     def test_raw_key_not_stored_in_db(self):
-        from app.core.api_keys import create_api_key, _hash_key
         import app.db.database as db_module
+        from app.core.api_keys import _hash_key, create_api_key
         db = db_module.SessionLocal()
         try:
             key_id, raw_key, record = create_api_key(db, name="no-plaintext", role="viewer")
@@ -141,8 +139,8 @@ class TestCreateApiKey:
             db.close()
 
     def test_invalid_role_raises_value_error(self):
-        from app.core.api_keys import create_api_key
         import app.db.database as db_module
+        from app.core.api_keys import create_api_key
         db = db_module.SessionLocal()
         try:
             with pytest.raises(ValueError, match="Invalid role"):
@@ -151,8 +149,8 @@ class TestCreateApiKey:
             db.close()
 
     def test_admin_role_is_valid(self):
-        from app.core.api_keys import create_api_key
         import app.db.database as db_module
+        from app.core.api_keys import create_api_key
         db = db_module.SessionLocal()
         try:
             _, _, record = create_api_key(db, name="admin-key", role="admin")
@@ -164,8 +162,8 @@ class TestCreateApiKey:
 @pytest.mark.unit
 class TestLookupApiKey:
     def test_returns_record_for_correct_key(self):
-        from app.core.api_keys import create_api_key, lookup_api_key
         import app.db.database as db_module
+        from app.core.api_keys import create_api_key, lookup_api_key
         db = db_module.SessionLocal()
         try:
             _, raw_key, _ = create_api_key(db, name="lookup-test", role="operator")
@@ -176,8 +174,8 @@ class TestLookupApiKey:
             db.close()
 
     def test_returns_none_for_wrong_key(self):
-        from app.core.api_keys import lookup_api_key
         import app.db.database as db_module
+        from app.core.api_keys import lookup_api_key
         db = db_module.SessionLocal()
         try:
             result = lookup_api_key(db, "orc_totally-wrong-key-that-does-not-exist")
@@ -186,8 +184,8 @@ class TestLookupApiKey:
             db.close()
 
     def test_returns_none_for_revoked_key(self):
-        from app.core.api_keys import create_api_key, lookup_api_key, revoke_api_key
         import app.db.database as db_module
+        from app.core.api_keys import create_api_key, lookup_api_key, revoke_api_key
         db = db_module.SessionLocal()
         try:
             key_id, raw_key, _ = create_api_key(db, name="revoke-lookup", role="viewer")
@@ -198,8 +196,8 @@ class TestLookupApiKey:
             db.close()
 
     def test_updates_last_used_at_on_match(self):
-        from app.core.api_keys import create_api_key, lookup_api_key
         import app.db.database as db_module
+        from app.core.api_keys import create_api_key, lookup_api_key
         db = db_module.SessionLocal()
         try:
             _, raw_key, _ = create_api_key(db, name="last-used", role="operator")
@@ -213,8 +211,8 @@ class TestLookupApiKey:
 @pytest.mark.unit
 class TestRevokeApiKey:
     def test_sets_is_active_false(self):
-        from app.core.api_keys import create_api_key, revoke_api_key
         import app.db.database as db_module
+        from app.core.api_keys import create_api_key, revoke_api_key
         db = db_module.SessionLocal()
         try:
             key_id, _, _ = create_api_key(db, name="to-revoke", role="operator")
@@ -226,8 +224,8 @@ class TestRevokeApiKey:
             db.close()
 
     def test_returns_none_for_unknown_key_id(self):
-        from app.core.api_keys import revoke_api_key
         import app.db.database as db_module
+        from app.core.api_keys import revoke_api_key
         db = db_module.SessionLocal()
         try:
             result = revoke_api_key(db, "kid_doesnotexist")

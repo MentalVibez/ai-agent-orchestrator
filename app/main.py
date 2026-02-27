@@ -14,10 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.routes import agents, api_keys, metrics, orchestrator, runs, webhooks
 from app.api.v1.routes import rag as rag_routes
-from app.core.auth import verify_api_key, verify_metrics_token
-from app.core.logging_config import configure_logging
-from app.middleware.graceful_shutdown import GracefulShutdownMiddleware
-from app.middleware.request_id import RequestIDMiddleware
+from app.core.auth import verify_metrics_token
 from app.core.config import settings
 from app.core.exceptions import (
     AgentError,
@@ -26,8 +23,11 @@ from app.core.exceptions import (
     ServiceUnavailableError,
     ValidationError,
 )
+from app.core.logging_config import configure_logging
 from app.core.rate_limit import RateLimitExceeded, _rate_limit_exceeded_handler, limiter
 from app.core.services import get_service_container
+from app.middleware.graceful_shutdown import GracefulShutdownMiddleware
+from app.middleware.request_id import RequestIDMiddleware
 from app.models.request import HealthResponse
 
 # Configure structured logging with secrets redaction
@@ -544,7 +544,7 @@ async def health_check(request: Request) -> HealthResponse:
 
         # Circuit breaker states — open breaker means LLM is unreachable
         try:
-            from app.core.circuit_breaker import get_breaker_states, is_llm_breaker_open
+            from app.core.circuit_breaker import is_llm_breaker_open
 
             if is_llm_breaker_open():
                 issues.append("LLM circuit breaker is OPEN (downstream failing)")

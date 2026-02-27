@@ -11,7 +11,6 @@ from app.planner.loop import (
     _parse_planner_response,
 )
 
-
 # ---------------------------------------------------------------------------
 # Pure-function tests (no I/O)
 # ---------------------------------------------------------------------------
@@ -403,8 +402,8 @@ class TestRunPlannerLoop:
         self, mock_get_run, mock_append, mock_update, mock_profile, mock_mcp
     ):
         """Tool execution timeout is recorded as an error step and the loop continues."""
-        from app.planner.loop import run_planner_loop
         from app.core.config import settings
+        from app.planner.loop import run_planner_loop
 
         mock_update.return_value = None
         mock_append.return_value = None

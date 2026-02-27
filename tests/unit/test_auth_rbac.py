@@ -1,20 +1,16 @@
 """Unit tests for app/core/auth.py — including the new DB registry and RBAC."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
-from starlette.responses import JSONResponse
 
 from app.core.auth import require_role, verify_api_key, verify_metrics_token
 from app.core.config import settings
 from app.db.database import init_db
-
 
 # ---------------------------------------------------------------------------
 # Module-level in-memory DB

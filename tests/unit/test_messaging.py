@@ -46,7 +46,8 @@ class TestMessageBus:
 
     def test_subscribe_registers_callback(self):
         bus = MessageBus()
-        cb = lambda msg: None
+        def cb(msg):
+            pass
         bus.subscribe("task", cb)
         assert "task" in bus._subscribers
         assert cb in bus._subscribers["task"]

@@ -78,12 +78,20 @@ class TestOrchestrator:
         self, orchestrator: Orchestrator, network_agent
     ):
         """Test coordinating multiple agents."""
+        from app.models.agent import AgentResult
+
         orchestrator.agent_registry.register(network_agent)
 
-        # Register same agent twice to simulate multiple agents
-        results = await orchestrator.coordinate_agents(
-            ["network_diagnostics", "network_diagnostics"], "Check network connectivity to example.com"
+        mock_result = AgentResult(
+            agent_id="network_diagnostics",
+            agent_name="Network Diagnostics Agent",
+            success=True,
+            output={"summary": "Network connectivity OK"},
         )
+        with patch.object(network_agent, "execute", new=AsyncMock(return_value=mock_result)):
+            results = await orchestrator.coordinate_agents(
+                ["network_diagnostics", "network_diagnostics"], "Check network connectivity to example.com"
+            )
 
         assert len(results) == 2
         assert all(r.success for r in results)

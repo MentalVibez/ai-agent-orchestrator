@@ -143,21 +143,29 @@ class AgentSandbox:
         limits = context.resource_limits
         context.start_time = time.time()
 
-        # Set memory limit (if supported on Unix)
+        # Snapshot originals so the finally block can restore them exactly.
+        # Only the soft limit is changed; the hard limit is left alone so that
+        # a non-root process can always restore the previous soft limit.
+        _orig_as: Optional[tuple] = None
+        _orig_cpu: Optional[tuple] = None
         if resource is not None:
             try:
                 if limits.max_memory_mb > 0:
+                    _orig_as = resource.getrlimit(resource.RLIMIT_AS)
                     max_memory_bytes = limits.max_memory_mb * 1024 * 1024
-                    resource.setrlimit(resource.RLIMIT_AS, (max_memory_bytes, max_memory_bytes))
+                    resource.setrlimit(resource.RLIMIT_AS, (max_memory_bytes, _orig_as[1]))
             except (ValueError, OSError) as e:
-                logger.warning(f"Could not set memory limits: {str(e)}")
+                logger.warning("Could not set memory limit: %s", e)
+                _orig_as = None
             try:
                 if limits.max_cpu_time > 0:
+                    _orig_cpu = resource.getrlimit(resource.RLIMIT_CPU)
                     resource.setrlimit(
-                        resource.RLIMIT_CPU, (int(limits.max_cpu_time), int(limits.max_cpu_time))
+                        resource.RLIMIT_CPU, (int(limits.max_cpu_time), _orig_cpu[1])
                     )
             except (ValueError, OSError) as e:
-                logger.warning(f"Could not set CPU limits: {str(e)}")
+                logger.warning("Could not set CPU limit: %s", e)
+                _orig_cpu = None
 
         # Set execution timeout
         timeout_timer = None
@@ -221,17 +229,18 @@ class AgentSandbox:
             if timeout_timer:
                 timeout_timer.cancel()
 
-            # Reset resource limits (Unix only)
+            # Restore resource limits (Unix only)
             if resource is not None:
-                try:
-                    resource.setrlimit(
-                        resource.RLIMIT_AS, (resource.RLIM_INFINITY, resource.RLIM_INFINITY)
-                    )
-                    resource.setrlimit(
-                        resource.RLIMIT_CPU, (resource.RLIM_INFINITY, resource.RLIM_INFINITY)
-                    )
-                except (ValueError, OSError):
-                    pass
+                if _orig_as is not None:
+                    try:
+                        resource.setrlimit(resource.RLIMIT_AS, _orig_as)
+                    except (ValueError, OSError):
+                        pass
+                if _orig_cpu is not None:
+                    try:
+                        resource.setrlimit(resource.RLIMIT_CPU, _orig_cpu)
+                    except (ValueError, OSError):
+                        pass
 
     async def execute_with_limits_async(
         self,

@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     app_version: str = Field(default="1.0.0", alias="APP_VERSION")
     debug: bool = Field(default=False, alias="DEBUG")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    # "json" (default in prod) or "text" (default in dev). See logging_config.py.
+    log_format: str = Field(default="json", alias="LOG_FORMAT")
 
     # CORS Settings
     cors_origins: str = Field(
@@ -95,7 +97,12 @@ class Settings(BaseSettings):
         """Parse CORS origins string into a list."""
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
-    model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
 
 # Global settings instance

@@ -16,8 +16,12 @@ sqlalchemy>=2.0.0
 alembic>=1.12.0
 psycopg2-binary>=2.9.0
 
-# Monitoring
+# Monitoring & observability
 prometheus-client>=0.18.0
+python-json-logger>=2.0.7
+
+# Production reliability
+pybreaker>=1.2.0
 
 # MCP (Model Context Protocol) — requires Python 3.10+
 mcp[cli]>=1.0.0

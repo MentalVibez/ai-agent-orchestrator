@@ -29,6 +29,8 @@ ENV/
 # Environment Variables
 .env
 .env.local
+.env.staging
+.env.production
 .env.*.local
 
 # IDE
@@ -55,9 +57,17 @@ logs/
 
 # Database
 *.db
+*.db-journal
 *.sqlite
 *.sqlite3
+*.sqlite-journal
 orchestrator.db
+
+# Load test results
+tests/load/results/
+
+# Backup files
+backups/
 
 # OS
 .DS_Store

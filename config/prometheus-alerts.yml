@@ -1,0 +1,167 @@
+# =============================================================================
+# Prometheus Alerting Rules — AI Agent Orchestrator SLA
+#
+# Load into Prometheus via rule_files in prometheus.yml:
+#   rule_files:
+#     - /etc/prometheus/alerts/prometheus-alerts.yml
+#
+# Integrate with PagerDuty/OpsGenie via Alertmanager routing.
+# =============================================================================
+
+groups:
+
+  # ---------------------------------------------------------------------------
+  # Availability SLA — target: 99.5% monthly uptime
+  # ---------------------------------------------------------------------------
+  - name: availability
+    interval: 30s
+    rules:
+
+      - alert: ServiceDown
+        expr: up{job="ai-agent-orchestrator"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "AI Agent Orchestrator is DOWN"
+          description: >
+            The orchestrator has been unreachable for more than 1 minute.
+            This breaches our 99.5% SLA. Immediate action required.
+          runbook: "https://wiki.internal/runbooks/orchestrator-down"
+
+      - alert: HealthCheckDegraded
+        expr: >
+          sum(rate(http_requests_total{endpoint="/api/v1/health", status="5xx"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Health check returning errors"
+          description: "Health check endpoint is returning 5xx errors — check database and LLM connectivity."
+
+  # ---------------------------------------------------------------------------
+  # Error Rate SLA — target: < 1% error rate sustained
+  # ---------------------------------------------------------------------------
+  - name: error_rate
+    rules:
+
+      - alert: HighErrorRate
+        expr: >
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total[5m])) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Error rate exceeds 1% SLA threshold"
+          description: >
+            5xx error rate is {{ $value | humanizePercentage }} over the last 5 minutes.
+            SLA target is < 1%. Investigate immediately.
+
+      - alert: ElevatedErrorRate
+        expr: >
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total[5m])) > 0.005
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Error rate elevated (>0.5%) — approaching SLA threshold"
+          description: >
+            Error rate is {{ $value | humanizePercentage }}. SLA threshold is 1%.
+            Investigate before it escalates.
+
+  # ---------------------------------------------------------------------------
+  # Latency SLA — target: p95 < 5s for orchestration, p99 < 30s for runs
+  # ---------------------------------------------------------------------------
+  - name: latency
+    rules:
+
+      - alert: OrchestrateLatencyHigh
+        expr: >
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{endpoint="/api/v1/orchestrate"}[5m])) by (le)
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "POST /orchestrate p95 latency exceeds 5s SLA"
+          description: >
+            p95 latency for /api/v1/orchestrate is {{ $value | humanizeDuration }}.
+            SLA target is < 5s. Check LLM provider response times and agent execution.
+
+      - alert: RunStartLatencyHigh
+        expr: >
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket{endpoint="/api/v1/run"}[5m])) by (le)
+          ) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "POST /run p99 latency exceeds 10s"
+          description: >
+            POST /run should return immediately (async). p99 > 10s suggests DB contention.
+            Current p99: {{ $value | humanizeDuration }}.
+
+  # ---------------------------------------------------------------------------
+  # LLM / Cost Alerts
+  # ---------------------------------------------------------------------------
+  - name: llm_health
+    rules:
+
+      - alert: LLMCallFailureSpike
+        expr: >
+          sum(rate(llm_calls_total{status="failure"}[5m]))
+          /
+          sum(rate(llm_calls_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "LLM call failure rate > 10%"
+          description: >
+            More than 10% of LLM calls are failing. The circuit breaker may open soon.
+            Check LLM provider status and credentials.
+
+      - alert: LLMCostSpike
+        expr: >
+          increase(llm_cost_total[1h]) > 10
+        for: 0m
+        labels:
+          severity: warning
+          team: finance
+        annotations:
+          summary: "LLM cost spike: >$10 in the last hour"
+          description: >
+            LLM spend increased by ${{ $value | humanize }} in the last hour.
+            Investigate for runaway loops or unexpected high-token requests.
+
+  # ---------------------------------------------------------------------------
+  # Rate Limiting
+  # ---------------------------------------------------------------------------
+  - name: rate_limiting
+    rules:
+
+      - alert: RateLimitSustained
+        expr: >
+          sum(rate(http_requests_total{status="429"}[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Sustained rate limit rejections (>5/s)"
+          description: >
+            More than 5 requests per second are being rejected by rate limiting.
+            Consider raising RATE_LIMIT_PER_MINUTE or investigating for abuse.

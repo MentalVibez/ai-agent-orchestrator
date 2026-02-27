@@ -8,6 +8,44 @@ from sqlalchemy.sql import func
 from app.db.database import Base
 
 
+class ApiKeyRecord(Base):
+    """Named, hashed API key with role for access control and rotation support."""
+
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key_id = Column(String, unique=True, index=True, nullable=False)  # public identifier (prefix)
+    key_hash = Column(String, nullable=False)  # SHA-256 hex digest of the raw key
+    name = Column(String, nullable=False)  # human label (e.g. "prod-frontend")
+    role = Column(String, nullable=False, default="operator")  # viewer | operator | admin
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "key_id": self.key_id,
+            "name": self.name,
+            "role": self.role,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
+            "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None,
+        }
+
+
+class IdempotencyRecord(Base):
+    """Maps client-supplied Idempotency-Key to a run_id to prevent duplicate runs."""
+
+    __tablename__ = "idempotency_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    idempotency_key = Column(String, unique=True, index=True, nullable=False)
+    run_id = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class ExecutionHistory(Base):
     """Model for storing execution history."""
 

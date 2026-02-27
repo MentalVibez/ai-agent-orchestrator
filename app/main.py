@@ -12,9 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.v1.routes import agents, metrics, orchestrator, runs, webhooks
+from app.api.v1.routes import agents, api_keys, metrics, orchestrator, runs, webhooks
 from app.api.v1.routes import rag as rag_routes
-from app.core.auth import verify_api_key
+from app.core.auth import verify_api_key, verify_metrics_token
+from app.core.logging_config import configure_logging
+from app.middleware.graceful_shutdown import GracefulShutdownMiddleware
 from app.middleware.request_id import RequestIDMiddleware
 from app.core.config import settings
 from app.core.exceptions import (
@@ -28,11 +30,8 @@ from app.core.rate_limit import RateLimitExceeded, _rate_limit_exceeded_handler,
 from app.core.services import get_service_container
 from app.models.request import HealthResponse
 
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper(), logging.INFO),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+# Configure structured logging with secrets redaction
+configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -214,7 +213,6 @@ async def orchestrator_exception_handler(request: Request, exc: OrchestratorErro
         exc_info=True,
         extra={"error_code": exc.error_code, "details": exc.details},
     )
-
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
@@ -222,6 +220,7 @@ async def orchestrator_exception_handler(request: Request, exc: OrchestratorErro
                 "code": exc.error_code,
                 "message": exc.message,
                 "details": exc.details,
+                "recovery_hint": exc.recovery_hint,
                 "request_id": getattr(request.state, "request_id", None),
             }
         },
@@ -237,7 +236,6 @@ async def agent_exception_handler(request: Request, exc: AgentError):
         exc_info=True,
         extra={"agent_id": exc.agent_id, "details": exc.details},
     )
-
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
@@ -246,6 +244,7 @@ async def agent_exception_handler(request: Request, exc: AgentError):
                 "message": exc.message,
                 "agent_id": exc.agent_id,
                 "details": exc.details,
+                "recovery_hint": exc.recovery_hint,
                 "request_id": getattr(request.state, "request_id", None),
             }
         },
@@ -261,7 +260,6 @@ async def llm_provider_exception_handler(request: Request, exc: LLMProviderError
         exc_info=True,
         extra={"provider": exc.provider, "details": exc.details},
     )
-
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         content={
@@ -270,6 +268,7 @@ async def llm_provider_exception_handler(request: Request, exc: LLMProviderError
                 "message": exc.message,
                 "provider": exc.provider,
                 "details": exc.details,
+                "recovery_hint": exc.recovery_hint,
                 "request_id": getattr(request.state, "request_id", None),
             }
         },
@@ -284,7 +283,6 @@ async def validation_exception_handler(request: Request, exc: ValidationError):
         f"Field {exc.field} - {exc.message}",
         extra={"field": exc.field, "details": exc.details},
     )
-
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={
@@ -293,6 +291,7 @@ async def validation_exception_handler(request: Request, exc: ValidationError):
                 "message": exc.message,
                 "field": exc.field,
                 "details": exc.details,
+                "recovery_hint": exc.recovery_hint,
                 "request_id": getattr(request.state, "request_id", None),
             }
         },
@@ -307,7 +306,6 @@ async def service_unavailable_exception_handler(request: Request, exc: ServiceUn
         f"Service {exc.service} - {exc.message}",
         extra={"service": exc.service, "details": exc.details},
     )
-
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         content={
@@ -316,6 +314,7 @@ async def service_unavailable_exception_handler(request: Request, exc: ServiceUn
                 "message": exc.message,
                 "service": exc.service,
                 "details": exc.details,
+                "recovery_hint": exc.recovery_hint,
                 "request_id": getattr(request.state, "request_id", None),
             }
         },
@@ -330,7 +329,6 @@ async def general_exception_handler(request: Request, exc: Exception):
         f"UnhandledException [{request_id}]: {type(exc).__name__} - {str(exc)}", exc_info=True
     )
 
-    # Don't expose internal errors in production
     if settings.debug:
         error_message = str(exc)
     else:
@@ -339,7 +337,15 @@ async def general_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
-            "error": {"code": "INTERNAL_ERROR", "message": error_message, "request_id": request_id}
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": error_message,
+                "recovery_hint": (
+                    "Retry your request. If the problem persists, contact support "
+                    "and include the request_id from this response."
+                ),
+                "request_id": request_id,
+            }
         },
     )
 
@@ -368,7 +374,36 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-# Add middleware (order matters — RequestID first so all subsequent middleware can read it)
+# Deprecation header map: path_prefix → (Sunset RFC 1123 date, migration URL)
+# Populate when a route family enters the Deprecated lifecycle phase.
+# Example:  "/api/v1/legacy": ("Sat, 01 Jan 2028 00:00:00 GMT", "https://docs.example.com/migration")
+_DEPRECATED_PREFIXES: dict[str, tuple[str, str]] = {}
+
+
+class ApiVersionHeadersMiddleware(BaseHTTPMiddleware):
+    """Adds API-Version, Deprecation, and Sunset headers per route.
+
+    Per the versioning policy (docs/API_VERSIONING.md):
+      - All responses carry X-API-Version so clients can detect version mismatches.
+      - Deprecated route families also carry Deprecation and Sunset headers.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-API-Version"] = settings.app_version
+        for prefix, (sunset, link) in _DEPRECATED_PREFIXES.items():
+            if request.url.path.startswith(prefix):
+                response.headers["Deprecation"] = "true"
+                response.headers["Sunset"] = sunset
+                response.headers["Link"] = f'<{link}>; rel="deprecation"'
+                break
+        return response
+
+
+# Add middleware (order matters — outermost first, innermost last)
+# GracefulShutdown is outermost so it can reject new requests during drain
+app.add_middleware(GracefulShutdownMiddleware)
+app.add_middleware(ApiVersionHeadersMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
@@ -388,6 +423,7 @@ app.include_router(agents.router)
 app.include_router(metrics.router)
 app.include_router(runs.router)
 app.include_router(webhooks.router)
+app.include_router(api_keys.router)
 # RAG routes are always registered; individual endpoints return 503 if chromadb is not installed
 app.include_router(rag_routes.router)
 
@@ -421,12 +457,12 @@ async def console():
 @limiter.limit("30/minute")
 async def prometheus_metrics(
     request: Request,
-    api_key: str = Depends(verify_api_key),
+    _auth: None = Depends(verify_metrics_token),
 ):
     """
-    Prometheus scrape endpoint for metrics (DEX stack: Prometheus/Grafana).
-    Returns metrics in Prometheus text exposition format.
-    Requires X-API-Key authentication — configure Prometheus with the same key.
+    Prometheus scrape endpoint.
+    Auth: set METRICS_TOKEN and configure Prometheus with bearer_token = <value>.
+    If METRICS_TOKEN is not set, falls back to X-API-Key verification.
     """
     from app.core.metrics import get_metrics
 
@@ -503,6 +539,15 @@ async def health_check(request: Request) -> HealthResponse:
             from app.mcp.client_manager import get_mcp_client_manager
 
             mcp_connected = get_mcp_client_manager().is_connected()
+        except Exception:
+            pass
+
+        # Circuit breaker states — open breaker means LLM is unreachable
+        try:
+            from app.core.circuit_breaker import get_breaker_states, is_llm_breaker_open
+
+            if is_llm_breaker_open():
+                issues.append("LLM circuit breaker is OPEN (downstream failing)")
         except Exception:
             pass
 

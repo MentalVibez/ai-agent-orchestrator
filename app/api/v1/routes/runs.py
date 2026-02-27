@@ -35,7 +35,44 @@ async def start_run(
     """
     Start a new MCP-centric run. Returns immediately with run_id; execution continues in background.
     Use GET /runs/{run_id} to poll for status and result.
+
+    Supply an ``Idempotency-Key`` header to prevent duplicate runs on network retries.
+    Repeating the same key returns the original run instead of creating a new one.
     """
+    from app.core.idempotency import (
+        get_existing_run_id,
+        store_idempotency_key,
+        validate_idempotency_key,
+    )
+    from app.db.database import SessionLocal
+
+    # --- Idempotency check ---
+    idempotency_key_raw = request.headers.get("Idempotency-Key")
+    idempotency_key: Optional[str] = None
+    if idempotency_key_raw:
+        try:
+            idempotency_key = validate_idempotency_key(idempotency_key_raw)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        db = SessionLocal()
+        try:
+            existing_run_id = get_existing_run_id(db, idempotency_key)
+        finally:
+            db.close()
+
+        if existing_run_id:
+            existing = await get_run_by_id(existing_run_id)
+            if existing:
+                return RunResponse(
+                    run_id=existing.run_id,
+                    status=RunStatus(existing.status),
+                    goal=existing.goal,
+                    agent_profile_id=existing.agent_profile_id,
+                    created_at=existing.created_at.isoformat() if existing.created_at else None,
+                    message="Duplicate request — returning existing run.",
+                )
+
     goal = validate_goal(body.goal)
     context = validate_run_context(body.context)
     if body.stream_tokens:
@@ -46,6 +83,15 @@ async def start_run(
         agent_profile_id=profile_id,
         context=context,
     )
+
+    # Store idempotency mapping after run is persisted
+    if idempotency_key:
+        db = SessionLocal()
+        try:
+            store_idempotency_key(db, idempotency_key, run.run_id)
+        finally:
+            db.close()
+
     enqueued = await enqueue_run(
         run_id=run.run_id,
         goal=goal,

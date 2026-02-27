@@ -1,0 +1,43 @@
+# Staging environment override for docker-compose.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
+#
+# This file inherits the base services from docker-compose.yml and overrides
+# settings appropriate for a staging/pre-production environment:
+#   - Separate named volumes (staging-postgres-data) to isolate data
+#   - Different port mapping to allow running beside production
+#   - DEBUG=false (mirrors production behaviour)
+#   - Relaxed CORS for internal testing tools
+#   - Separate env file: .env.staging
+
+version: '3.8'
+
+services:
+  db:
+    container_name: ai-agent-orchestrator-db-staging
+    volumes:
+      - staging-postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=orchestrator_staging
+
+  api:
+    container_name: ai-agent-orchestrator-staging
+    ports:
+      - "8001:8000"        # Different port — avoids clash with production on 8000
+    env_file:
+      - .env.staging
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DATABASE_URL=postgresql://postgres:${STAGING_POSTGRES_PASSWORD:-changeme_staging}@db:5432/orchestrator_staging
+      - DEBUG=false
+      - LOG_LEVEL=DEBUG    # Verbose logs in staging for debugging
+      - LOG_FORMAT=json
+    volumes:
+      - ./config:/app/config:ro
+      - staging-app-data:/app/data
+
+volumes:
+  staging-postgres-data:
+  staging-app-data:

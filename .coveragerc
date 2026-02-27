@@ -1,0 +1,20 @@
+[run]
+source = app
+omit =
+    app/worker.py
+    */__init__.py
+    */migrations/*
+
+[report]
+# Global minimum — fail the CI job if overall coverage drops below this
+fail_under = 70
+show_missing = true
+skip_covered = false
+
+[paths]
+source =
+    app/
+
+# High-risk modules: destructive agents, planner, auth, core security
+# These are checked individually in the CI workflow with higher thresholds.
+# See .github/workflows/test.yml coverage-gates job.

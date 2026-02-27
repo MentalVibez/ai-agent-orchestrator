@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     api_key: str = Field(default="", alias="API_KEY")
     rate_limit_per_minute: int = Field(default=60, alias="RATE_LIMIT_PER_MINUTE")
     require_api_key: bool = Field(default=True, alias="REQUIRE_API_KEY")
+    # Separate token for Prometheus /metrics scrape endpoint.
+    # If set, the /metrics endpoint accepts X-Metrics-Token or "Authorization: Bearer <token>".
+    # If empty, /metrics falls back to the main API_KEY check.
+    # Standard Prometheus config: scrape_configs.bearer_token = <this value>
+    metrics_token: str = Field(default="", alias="METRICS_TOKEN")
+
     # Webhook secret for HMAC-SHA256 validation of Prometheus Alertmanager payloads.
     # Set to a strong random string (e.g. openssl rand -hex 32). Empty = webhook auth disabled.
     webhook_secret: str = Field(default="", alias="WEBHOOK_SECRET")

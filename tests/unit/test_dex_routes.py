@@ -313,5 +313,236 @@ class TestFeedback:
 
 
 # ---------------------------------------------------------------------------
-# Runbooks — covered by test_rag_routes.py; environment-dependent tests omitted
+# Acknowledge Alert
 # ---------------------------------------------------------------------------
+
+
+class TestAcknowledgeAlert:
+    def test_acknowledge_unknown_alert_returns_404(self, client):
+        resp = client.post("/api/v1/dex/alerts/99999/acknowledge")
+        assert resp.status_code == 404
+
+    def test_acknowledge_alert_success(self, client):
+        from app.db.database import SessionLocal
+        from app.db.models import DexAlert
+
+        db = SessionLocal()
+        alert = DexAlert(
+            hostname="ack-host",
+            alert_name="HighCPU",
+            severity="warning",
+            alert_type="threshold",
+            status="active",
+        )
+        db.add(alert)
+        db.commit()
+        alert_id = alert.id
+        db.close()
+
+        resp = client.post(f"/api/v1/dex/alerts/{alert_id}/acknowledge?hours=2")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["alert_id"] == alert_id
+        assert "acknowledged_until" in data
+
+
+# ---------------------------------------------------------------------------
+# Alert Filtering
+# ---------------------------------------------------------------------------
+
+
+class TestAlertFilters:
+    def test_filter_alerts_by_hostname(self, client):
+        from app.db.database import SessionLocal
+        from app.db.models import DexAlert
+
+        db = SessionLocal()
+        db.add(DexAlert(
+            hostname="filter-host-A",
+            alert_name="FilterAlert",
+            severity="warning",
+            alert_type="threshold",
+            status="active",
+        ))
+        db.add(DexAlert(
+            hostname="other-host-B",
+            alert_name="OtherAlert",
+            severity="warning",
+            alert_type="threshold",
+            status="active",
+        ))
+        db.commit()
+        db.close()
+
+        resp = client.get("/api/v1/dex/alerts?hostname=filter-host-A")
+        assert resp.status_code == 200
+        alerts = resp.json()["alerts"]
+        assert all(a["hostname"] == "filter-host-A" for a in alerts)
+
+    def test_filter_alerts_by_severity(self, client):
+        from app.db.database import SessionLocal
+        from app.db.models import DexAlert
+
+        db = SessionLocal()
+        db.add(DexAlert(
+            hostname="severity-host",
+            alert_name="CriticalAlert",
+            severity="critical",
+            alert_type="threshold",
+            status="active",
+        ))
+        db.commit()
+        db.close()
+
+        resp = client.get("/api/v1/dex/alerts?severity=critical")
+        assert resp.status_code == 200
+        alerts = resp.json()["alerts"]
+        assert any(a["severity"] == "critical" for a in alerts)
+
+    def test_filter_alerts_by_resolved_status(self, client):
+        from app.db.database import SessionLocal
+        from app.db.models import DexAlert
+
+        db = SessionLocal()
+        db.add(DexAlert(
+            hostname="resolved-host",
+            alert_name="ResolvedAlert",
+            severity="info",
+            alert_type="threshold",
+            status="resolved",
+        ))
+        db.commit()
+        db.close()
+
+        resp = client.get("/api/v1/dex/alerts?status=resolved")
+        assert resp.status_code == 200
+        alerts = resp.json()["alerts"]
+        assert any(a["alert_name"] == "ResolvedAlert" for a in alerts)
+
+
+# ---------------------------------------------------------------------------
+# Fleet and Score with actual data
+# ---------------------------------------------------------------------------
+
+
+class TestFleetWithData:
+    def test_fleet_summary_with_score_records(self, client):
+        from app.db.database import SessionLocal
+        from app.db.models import DexScoreRecord
+
+        client.post("/api/v1/dex/endpoints", json={"hostname": "fleet-scored-host"})
+        db = SessionLocal()
+        db.add(DexScoreRecord(
+            hostname="fleet-scored-host",
+            score=85.0,
+            device_health_score=90.0,
+            network_score=80.0,
+            app_performance_score=85.0,
+            remediation_score=75.0,
+        ))
+        db.commit()
+        db.close()
+
+        resp = client.get("/api/v1/dex/fleet")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_endpoints"] >= 1
+        assert data["avg_dex_score"] is not None
+        assert "at_risk" in data
+        assert "healthy" in data
+
+    def test_score_endpoint_returns_data(self, client):
+        from app.db.database import SessionLocal
+        from app.db.models import DexScoreRecord
+
+        client.post("/api/v1/dex/endpoints", json={"hostname": "direct-score-host"})
+        db = SessionLocal()
+        db.add(DexScoreRecord(
+            hostname="direct-score-host",
+            score=72.5,
+            device_health_score=80.0,
+            network_score=70.0,
+            app_performance_score=65.0,
+            remediation_score=60.0,
+        ))
+        db.commit()
+        db.close()
+
+        resp = client.get("/api/v1/dex/endpoints/direct-score-host/score")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["score"] == 72.5
+        assert data["hostname"] == "direct-score-host"
+
+    def test_score_history_with_records(self, client):
+        from app.db.database import SessionLocal
+        from app.db.models import DexScoreRecord
+
+        client.post("/api/v1/dex/endpoints", json={"hostname": "history-scored-host"})
+        db = SessionLocal()
+        for score in [80.0, 75.0, 70.0]:
+            db.add(DexScoreRecord(hostname="history-scored-host", score=score))
+        db.commit()
+        db.close()
+
+        resp = client.get("/api/v1/dex/endpoints/history-scored-host/history")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 3
+        assert len(data["history"]) == 3
+
+
+# ---------------------------------------------------------------------------
+# Runbook endpoints (chromadb not installed in test env → 503)
+# ---------------------------------------------------------------------------
+
+
+class TestRunbookEndpoints:
+    def test_get_runbooks_503_without_chromadb(self, client):
+        client.post("/api/v1/dex/endpoints", json={"hostname": "runbook-host"})
+        resp = client.get("/api/v1/dex/endpoints/runbook-host/runbooks")
+        assert resp.status_code in (200, 503)
+
+    def test_index_runbook_503_without_chromadb(self, client):
+        resp = client.post(
+            "/api/v1/dex/runbooks/index",
+            params={"doc_id": "test-doc", "content": "some runbook content"},
+        )
+        assert resp.status_code in (200, 503)
+
+
+# ---------------------------------------------------------------------------
+# KPIs with data
+# ---------------------------------------------------------------------------
+
+
+class TestKPIsWithData:
+    def test_kpis_with_resolved_alerts(self, client):
+        from datetime import datetime, timedelta, timezone
+
+        from app.db.database import SessionLocal
+        from app.db.models import DexAlert
+
+        now = datetime.now(timezone.utc)
+        db = SessionLocal()
+        alert = DexAlert(
+            hostname="kpi-host",
+            alert_name="KpiTest",
+            severity="warning",
+            alert_type="threshold",
+            status="resolved",
+            remediation_run_id="run-auto-123",
+        )
+        alert.created_at = now - timedelta(hours=2)
+        alert.resolved_at = now - timedelta(hours=1)
+        db.add(alert)
+        db.commit()
+        db.close()
+
+        resp = client.get("/api/v1/dex/kpis?lookback_days=7")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["resolved_alerts"] >= 1
+        assert data["auto_resolved_alerts"] >= 1
+        assert data["mttr_minutes"] is not None

@@ -48,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -77,7 +77,7 @@ jobs:
             --cov-report=xml \
             --cov-report=term-missing \
             --cov-config=.coveragerc
-      - name: Run tests without coverage (3.10)
+      - name: Run tests without coverage (3.12)
         if: matrix.python-version != '3.11'
         run: pytest tests/ -q
       - name: Upload coverage to Codecov
@@ -122,6 +122,14 @@ jobs:
           pytest tests/ \
             --cov=app/planner \
             --cov=app/agents \
+            --cov-report=term-missing \
+            --cov-fail-under=70 \
+            -q
+      - name: DEX platform coverage gate (target 70%)
+        run: |
+          pytest tests/ \
+            --cov=app/core/dex \
+            --cov=app/api/v1/routes/dex \
             --cov-report=term-missing \
             --cov-fail-under=70 \
             -q

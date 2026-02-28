@@ -26,13 +26,36 @@ async def run_planner(
     from app.planner.loop import run_planner_loop
 
     logger.info("Worker processing run %s", run_id)
-    await run_planner_loop(
-        run_id=run_id,
-        goal=goal,
-        agent_profile_id=agent_profile_id,
-        context=context or None,
-    )
+    try:
+        await run_planner_loop(
+            run_id=run_id,
+            goal=goal,
+            agent_profile_id=agent_profile_id,
+            context=context or None,
+        )
+    except Exception as exc:
+        logger.error("Worker: run %s raised unhandled exception: %s: %s", run_id, type(exc).__name__, exc)
+        try:
+            from app.core.run_store import update_run
+            await update_run(run_id, status="failed", error=str(exc))
+        except Exception:
+            pass
+        raise
     logger.info("Worker finished run %s", run_id)
+
+
+async def _on_job_error(ctx: dict, job_id: str, exc: Exception) -> None:
+    """Arq callback: invoked when any job raises an unhandled exception.
+
+    Logs a structured error with the arq job_id so failures can be traced
+    in the application logs even when the job-level handler didn't catch them.
+    """
+    logger.error(
+        "Worker: arq job %s failed with %s: %s",
+        job_id,
+        type(exc).__name__,
+        exc,
+    )
 
 
 def _redis_settings():
@@ -95,6 +118,19 @@ class WorkerSettings:
     redis_settings = None
     functions = [run_planner]
     cron_jobs = _build_cron_jobs()
+
+    # Do not retry unique planner runs on failure — retrying would start a
+    # second execution with the same run_id, causing duplicate DB writes.
+    max_tries = 1
+
+    # Kill jobs that run longer than 10 minutes to prevent worker stalls.
+    job_timeout = 600
+
+    # Keep result data in Redis for 2 hours so failures are inspectable.
+    keep_result = 7200
+
+    # Structured error logging for any job that escapes its own exception handling.
+    on_job_error = _on_job_error
 
 
 WorkerSettings.redis_settings = _redis_settings()

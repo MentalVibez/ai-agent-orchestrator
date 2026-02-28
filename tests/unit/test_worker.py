@@ -77,3 +77,49 @@ class TestWorker:
             agent_profile_id="default",
             context={"host": "example.com"},
         )
+
+    def test_cron_jobs_registered(self):
+        """WorkerSettings.cron_jobs should include both DEX scheduled jobs."""
+        worker = _import_worker()
+        cron_jobs = worker.WorkerSettings.cron_jobs
+        # arq CronJob objects expose a .coroutine attribute
+        job_coroutines = [j.coroutine for j in cron_jobs]
+        from app.core.dex.scheduled_jobs import (
+            dex_check_predictive_alerts,
+            dex_scan_all_endpoints,
+        )
+        assert dex_scan_all_endpoints in job_coroutines
+        assert dex_check_predictive_alerts in job_coroutines
+
+    def test_dex_scan_cron_minutes_default(self):
+        """Default 15-minute interval yields {0, 15, 30, 45}."""
+        worker = _import_worker()
+        original = settings.dex_scan_interval_minutes
+        try:
+            settings.dex_scan_interval_minutes = 15
+            minutes = worker._dex_scan_cron_minutes()
+            assert minutes == {0, 15, 30, 45}
+        finally:
+            settings.dex_scan_interval_minutes = original
+
+    def test_dex_scan_cron_minutes_30(self):
+        """30-minute interval yields {0, 30}."""
+        worker = _import_worker()
+        original = settings.dex_scan_interval_minutes
+        try:
+            settings.dex_scan_interval_minutes = 30
+            minutes = worker._dex_scan_cron_minutes()
+            assert minutes == {0, 30}
+        finally:
+            settings.dex_scan_interval_minutes = original
+
+    def test_dex_scan_cron_minutes_fallback_for_invalid(self):
+        """Non-divisor interval (e.g. 7) falls back to 15-minute schedule."""
+        worker = _import_worker()
+        original = settings.dex_scan_interval_minutes
+        try:
+            settings.dex_scan_interval_minutes = 7
+            minutes = worker._dex_scan_cron_minutes()
+            assert minutes == {0, 15, 30, 45}
+        finally:
+            settings.dex_scan_interval_minutes = original

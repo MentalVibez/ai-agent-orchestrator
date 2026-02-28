@@ -24,6 +24,82 @@ logger = logging.getLogger(__name__)
 _dedup_cache: Dict[str, float] = {}
 
 
+async def _fire_dex_self_healing(alert_data: Dict[str, Any], summary: str) -> None:
+    """Background task: create a DexAlert for a Prometheus alert and trigger self-healing.
+
+    Resolves the hostname from the alert labels, checks whether it is a registered
+    DEX endpoint, deduplicates against existing active prometheus alerts, and then
+    calls handle_alert() to auto-remediate or escalate to a ticket.
+    Safe to call fire-and-forget; all errors are logged, never propagated.
+    """
+    from app.core.dex.endpoint_registry import get_endpoint
+    from app.core.dex.self_healing import handle_alert
+    from app.db.database import SessionLocal
+    from app.db.models import DexAlert
+
+    labels = alert_data.get("labels") or {}
+    # Prefer explicit "hostname" label; fall back to instance (strip port if present)
+    hostname = labels.get("hostname") or labels.get("instance", "").split(":")[0]
+    if not hostname:
+        return
+
+    alert_name = labels.get("alertname", "PrometheusAlert")
+    severity = labels.get("severity", "warning")
+    annotations = alert_data.get("annotations") or {}
+    message = annotations.get("summary") or annotations.get("description") or summary
+
+    db = SessionLocal()
+    try:
+        endpoint = get_endpoint(db, hostname)
+        if not endpoint or not endpoint.is_active:
+            return  # Not a managed DEX endpoint — nothing to do
+
+        # Deduplicate: skip if an active prometheus alert for this name already exists
+        existing = (
+            db.query(DexAlert)
+            .filter(
+                DexAlert.hostname == hostname,
+                DexAlert.alert_name == alert_name,
+                DexAlert.alert_type == "prometheus",
+                DexAlert.status == "active",
+            )
+            .first()
+        )
+        if existing:
+            logger.info(
+                "DEX: skipping duplicate prometheus alert %s for hostname=%s (alert_id=%d)",
+                alert_name,
+                hostname,
+                existing.id,
+            )
+            return
+
+        dex_alert = DexAlert(
+            hostname=hostname,
+            alert_name=alert_name,
+            severity=severity,
+            alert_type="prometheus",
+            message=message,
+        )
+        db.add(dex_alert)
+        db.commit()
+        db.refresh(dex_alert)
+
+        logger.info(
+            "DEX: created prometheus DexAlert alert_id=%d hostname=%s alert_name=%s",
+            dex_alert.id,
+            hostname,
+            alert_name,
+        )
+
+        await handle_alert(db, dex_alert)
+
+    except Exception as exc:
+        logger.error("DEX: prometheus self-healing hook failed: %s", exc, exc_info=True)
+    finally:
+        db.close()
+
+
 def _alert_summary(alert: Dict[str, Any]) -> str:
     """Build a short summary from an alert for use in a run goal."""
     labels = alert.get("labels") or {}
@@ -163,6 +239,12 @@ async def prometheus_webhook(
             "status": webhook_status,
             "alerts_count": len(alerts),
         }
+
+    # DEX self-healing hook: always fires for registered endpoints, independent of trigger_run
+    if firing:
+        asyncio.create_task(
+            _fire_dex_self_healing(firing[0], _alert_summary(firing[0]))
+        )
 
     if not trigger_run:
         return {

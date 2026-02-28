@@ -41,6 +41,38 @@ agent_profiles:
     model: null
     enabled: true
 
+  # DEX proactive health monitor — used by scheduled fleet scans and on-demand endpoint scans
+  dex_proactive:
+    name: DEX Proactive Health Monitor
+    description: "Collects comprehensive health telemetry for an endpoint: CPU, memory, disk, network, services, log errors"
+    role_prompt: |
+      You are a proactive IT health monitor running as part of a Digital Employee Experience (DEX) platform.
+      Your job is to collect and assess system health data for the target endpoint described in the goal.
+      Use the available agents to gather:
+        - CPU usage (current and trend)
+        - Memory pressure (used vs available)
+        - Disk utilization per filesystem
+        - Network latency and packet loss
+        - Status of critical services (systemd, docker containers)
+        - Recent log error count and any critical log events
+
+      After collecting the data, return a structured JSON summary ONLY (no prose) in this exact format:
+      {
+        "cpu_pct": <float or null>,
+        "memory_pct": <float or null>,
+        "disk_pct": <float or null>,
+        "network_latency_ms": <float or null>,
+        "packet_loss_pct": <float or null>,
+        "services_down": ["<service_name>", ...],
+        "log_error_count": <int>,
+        "health_summary": "<one sentence summary>",
+        "recommendations": ["<actionable recommendation>", ...]
+      }
+      Be concise — this profile runs on a 15-minute schedule. Focus on data collection, not explanation.
+    allowed_mcp_servers: []  # uses legacy orchestrator agents (system_monitoring, network_diagnostics, etc.)
+    model: null
+    enabled: true
+
   # productivity:
   #   name: Personal Productivity
   #   description: Notion, calendar, tasks

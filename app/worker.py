@@ -9,6 +9,7 @@ Requires: pip install arq
 import logging
 
 from app.core.config import settings
+from app.core.dex.scheduled_jobs import dex_check_predictive_alerts, dex_scan_all_endpoints
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -52,9 +53,48 @@ def _redis_settings():
     )
 
 
+def _dex_scan_cron_minutes() -> set:
+    """Compute the cron minute set from DEX_SCAN_INTERVAL_MINUTES.
+
+    The interval must be a positive divisor of 60 (1, 2, 3, 4, 5, 6, 10, 12,
+    15, 20, 30, 60).  Falls back to 15 if the configured value doesn't qualify.
+    """
+    interval = getattr(settings, "dex_scan_interval_minutes", 15)
+    if interval <= 0 or 60 % interval != 0:
+        logger.warning(
+            "DEX_SCAN_INTERVAL_MINUTES=%d is not a positive divisor of 60; defaulting to 15",
+            interval,
+        )
+        interval = 15
+    return set(range(0, 60, interval))
+
+
+def _build_cron_jobs() -> list:
+    """Build arq CronJob list for DEX scheduled jobs."""
+    try:
+        from arq.cron import cron as arq_cron
+    except ImportError:
+        logger.warning("arq.cron not available — DEX scheduled jobs not registered")
+        return []
+
+    scan_minutes = _dex_scan_cron_minutes()
+    jobs = [
+        arq_cron(dex_scan_all_endpoints, minute=scan_minutes),
+        arq_cron(dex_check_predictive_alerts, minute=0),  # top of every hour
+    ]
+    logger.info(
+        "DEX scheduled jobs registered: fleet scan every %d min (minutes=%s), "
+        "predictive check every hour",
+        settings.dex_scan_interval_minutes,
+        sorted(scan_minutes),
+    )
+    return jobs
+
+
 class WorkerSettings:
     redis_settings = None
     functions = [run_planner]
+    cron_jobs = _build_cron_jobs()
 
 
 WorkerSettings.redis_settings = _redis_settings()

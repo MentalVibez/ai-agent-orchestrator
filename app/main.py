@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.v1.routes import agents, api_keys, metrics, orchestrator, runs, webhooks
+from app.api.v1.routes import agents, api_keys, dex as dex_routes, metrics, orchestrator, runs, webhooks
 from app.api.v1.routes import rag as rag_routes
 from app.core.auth import verify_metrics_token
 from app.core.config import settings
@@ -426,6 +426,8 @@ app.include_router(webhooks.router)
 app.include_router(api_keys.router)
 # RAG routes are always registered; individual endpoints return 503 if chromadb is not installed
 app.include_router(rag_routes.router)
+# DEX (Digital Employee Experience) routes
+app.include_router(dex_routes.router)
 
 
 @app.get("/", tags=["root"])

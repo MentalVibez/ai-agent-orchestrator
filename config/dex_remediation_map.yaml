@@ -1,0 +1,78 @@
+# DEX Self-Healing Remediation Map
+#
+# Maps DEX alert names to automated remediation actions.
+# When DEX_SELF_HEALING_ENABLED=true, matching alerts trigger runs automatically.
+# When an alert has no mapping (or self-healing is disabled), a ticket is sent
+# to DEX_TICKET_WEBHOOK_URL with all diagnostic context attached.
+#
+# Actions:
+#   ansible     — run an Ansible playbook against the endpoint
+#   restart     — restart a named service
+#   clear_cache — clear temporary files / application cache
+#   ticket      — always escalate to ticketing system (no auto-healing)
+#
+# requires_approval: true  — requires HITL approval via POST /api/v1/runs/{id}/approve
+# requires_approval: false — fully automated (use with caution)
+
+remediation_map:
+
+  # --- Disk Issues ---
+  DiskFull:
+    action: ansible
+    playbook: cleanup_disk
+    requires_approval: false
+
+  # Predictive disk fill alert (from predictive_analysis.py)
+  DiskFull_Predictive:
+    action: ansible
+    playbook: cleanup_disk
+    requires_approval: false
+
+  # --- Memory Issues ---
+  HighMemory:
+    action: ansible
+    playbook: clear_cache
+    requires_approval: false
+
+  # Predictive memory trend alert
+  MemoryLeak:
+    action: ansible
+    playbook: restart_memory_hog
+    requires_approval: true
+
+  # --- CPU Issues ---
+  SustainedHighCPU:
+    action: ansible
+    playbook: investigate_cpu
+    requires_approval: true
+
+  # --- Services ---
+  ServiceDown:
+    action: restart
+    service: "{{ labels.service }}"
+    requires_approval: false
+
+  # --- DEX Score Thresholds ---
+  LowDexScore:
+    action: ansible
+    playbook: general_health_check
+    requires_approval: false
+
+  # --- Network ---
+  NetworkDegraded:
+    action: ansible
+    playbook: reset_network_stack
+    requires_approval: true
+
+  # --- Hardware / Kernel — always escalate ---
+  KernelPanic:
+    action: ticket
+    severity: critical
+
+  HardwareFailure:
+    action: ticket
+    severity: critical
+
+  BluescreenDetected:
+    action: ticket
+    severity: critical

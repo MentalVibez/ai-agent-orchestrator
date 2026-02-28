@@ -194,6 +194,175 @@ class Run(Base):
         return out
 
 
+# ---------------------------------------------------------------------------
+# DEX (Digital Employee Experience) Models
+# ---------------------------------------------------------------------------
+
+
+class Endpoint(Base):
+    """Registered managed endpoint (laptop, desktop, server) tracked by the DEX platform."""
+
+    __tablename__ = "dex_endpoints"
+
+    id = Column(Integer, primary_key=True, index=True)
+    hostname = Column(String, unique=True, index=True, nullable=False)
+    ip_address = Column(String, nullable=True)
+    owner_email = Column(String, nullable=True)
+    # developer | salesperson | executive | tech | general
+    persona = Column(String, nullable=True)
+    # 1=critical, 2=standard, 3=low
+    criticality_tier = Column(Integer, default=2, nullable=False)
+    # windows | linux | macos
+    os_platform = Column(String, nullable=True)
+    tags = Column(JSON, nullable=True)  # e.g. {"dept": "engineering", "location": "HQ"}
+    is_active = Column(Boolean, default=True, nullable=False)
+    last_scanned_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "hostname": self.hostname,
+            "ip_address": self.ip_address,
+            "owner_email": self.owner_email,
+            "persona": self.persona,
+            "criticality_tier": self.criticality_tier,
+            "os_platform": self.os_platform,
+            "tags": self.tags or {},
+            "is_active": self.is_active,
+            "last_scanned_at": self.last_scanned_at.isoformat() if self.last_scanned_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class EndpointMetricSnapshot(Base):
+    """Point-in-time health metrics collected from an endpoint during a DEX scan."""
+
+    __tablename__ = "dex_metric_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    hostname = Column(String, index=True, nullable=False)
+    run_id = Column(String, index=True, nullable=True)  # linked Run record
+    cpu_pct = Column(Float, nullable=True)
+    memory_pct = Column(Float, nullable=True)
+    disk_pct = Column(Float, nullable=True)
+    network_latency_ms = Column(Float, nullable=True)
+    packet_loss_pct = Column(Float, nullable=True)
+    services_down = Column(JSON, nullable=True)  # list of service name strings
+    log_error_count = Column(Integer, default=0)
+    raw_output = Column(JSON, nullable=True)  # full agent answer for audit
+    captured_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "hostname": self.hostname,
+            "run_id": self.run_id,
+            "cpu_pct": self.cpu_pct,
+            "memory_pct": self.memory_pct,
+            "disk_pct": self.disk_pct,
+            "network_latency_ms": self.network_latency_ms,
+            "packet_loss_pct": self.packet_loss_pct,
+            "services_down": self.services_down or [],
+            "log_error_count": self.log_error_count,
+            "captured_at": self.captured_at.isoformat() if self.captured_at else None,
+        }
+
+
+class DexScoreRecord(Base):
+    """Calculated DEX composite score (0–100) for an endpoint at a point in time."""
+
+    __tablename__ = "dex_scores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    hostname = Column(String, index=True, nullable=False)
+    score = Column(Float, nullable=False)  # composite 0–100
+    device_health_score = Column(Float, nullable=True)
+    network_score = Column(Float, nullable=True)
+    app_performance_score = Column(Float, nullable=True)
+    remediation_score = Column(Float, nullable=True)
+    scored_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "hostname": self.hostname,
+            "score": self.score,
+            "components": {
+                "device_health": self.device_health_score,
+                "network": self.network_score,
+                "app_performance": self.app_performance_score,
+                "remediation": self.remediation_score,
+            },
+            "scored_at": self.scored_at.isoformat() if self.scored_at else None,
+        }
+
+
+class DexAlert(Base):
+    """Active alert for a DEX endpoint — threshold breach, predictive, or Prometheus-sourced."""
+
+    __tablename__ = "dex_alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    hostname = Column(String, index=True, nullable=False)
+    alert_name = Column(String, nullable=False)
+    # info | warning | critical
+    severity = Column(String, default="warning", nullable=False)
+    # threshold | predictive | prometheus
+    alert_type = Column(String, nullable=True)
+    message = Column(Text, nullable=True)
+    # e.g. "2.3 days" for predictive disk-full alerts
+    predicted_time_to_impact = Column(String, nullable=True)
+    # active | remediating | resolved | acknowledged | needs_human
+    status = Column(String, default="active", nullable=False)
+    remediation_run_id = Column(String, nullable=True)
+    acknowledged_until = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "hostname": self.hostname,
+            "alert_name": self.alert_name,
+            "severity": self.severity,
+            "alert_type": self.alert_type,
+            "message": self.message,
+            "predicted_time_to_impact": self.predicted_time_to_impact,
+            "status": self.status,
+            "remediation_run_id": self.remediation_run_id,
+            "acknowledged_until": (
+                self.acknowledged_until.isoformat() if self.acknowledged_until else None
+            ),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+        }
+
+
+class EmployeeFeedback(Base):
+    """Pulse survey response from an employee about their digital work environment."""
+
+    __tablename__ = "dex_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    hostname = Column(String, index=True, nullable=True)
+    # 1–5: 1-2 = detractor, 3 = passive, 4-5 = promoter (maps to eNPS)
+    rating = Column(Integer, nullable=False)
+    comment = Column(Text, nullable=True)
+    # performance | connectivity | software | hardware | other
+    category = Column(String, nullable=True)
+    submitted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "hostname": self.hostname,
+            "rating": self.rating,
+            "comment": self.comment,
+            "category": self.category,
+            "submitted_at": self.submitted_at.isoformat() if self.submitted_at else None,
+        }
+
+
 class CostRecordDB(Base):
     """Persisted record of a single LLM call cost (P1.4)."""
 

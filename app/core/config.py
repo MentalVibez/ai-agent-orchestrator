@@ -92,6 +92,19 @@ class Settings(BaseSettings):
     # Agent message bus queue size per agent. Prevents unbounded memory growth under producer pressure.
     agent_bus_queue_maxsize: int = Field(default=1000, alias="AGENT_BUS_QUEUE_MAXSIZE")
 
+    # DEX (Digital Employee Experience) Settings
+    # Scan interval in minutes for the arq scheduled fleet health scan job
+    dex_scan_interval_minutes: int = Field(default=15, alias="DEX_SCAN_INTERVAL_MINUTES")
+    # DEX score threshold below which a "warning" alert is created (0–100)
+    dex_score_alert_threshold: int = Field(default=60, alias="DEX_SCORE_ALERT_THRESHOLD")
+    # DEX score threshold below which a "critical" alert is created (0–100)
+    dex_score_critical_threshold: int = Field(default=40, alias="DEX_SCORE_CRITICAL_THRESHOLD")
+    # When True, automatically trigger remediation runs when DEX alerts fire (self-healing)
+    dex_self_healing_enabled: bool = Field(default=False, alias="DEX_SELF_HEALING_ENABLED")
+    # Optional webhook URL for pre-emptive ticket creation (ServiceNow, Jira, etc.)
+    # When set, unresolvable alerts POST a JSON payload with diagnostic context
+    dex_ticket_webhook_url: str = Field(default="", alias="DEX_TICKET_WEBHOOK_URL")
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins string into a list."""

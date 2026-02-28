@@ -12,7 +12,6 @@ from sqlalchemy.pool import StaticPool
 from app.db.database import init_db
 from app.db.models import DexAlert
 
-
 # ---------------------------------------------------------------------------
 # Module-level DB patch
 # ---------------------------------------------------------------------------

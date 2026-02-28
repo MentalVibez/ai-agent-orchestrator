@@ -20,7 +20,6 @@ from app.api.v1.routes.webhooks import (
 from app.db.database import init_db
 from app.db.models import DexAlert, Endpoint
 
-
 # ---------------------------------------------------------------------------
 # Module-level DB patch (needed for _fire_dex_self_healing tests)
 # ---------------------------------------------------------------------------
@@ -31,7 +30,6 @@ def use_in_memory_db():
     import app.core.persistence as persistence_module
     import app.core.run_store as run_store_module
     import app.db.database as db_module
-    import app.api.v1.routes.webhooks as webhooks_module
 
     original_engine = db_module.engine
     original_session = db_module.SessionLocal

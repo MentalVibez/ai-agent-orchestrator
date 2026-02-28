@@ -231,7 +231,6 @@ def evaluate_thresholds(
 
     Returns the newly created alert, or None if no threshold was breached.
     """
-    from datetime import datetime, timezone
 
     score = score_record.score
     if score > alert_threshold:

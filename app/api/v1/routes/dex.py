@@ -14,6 +14,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.dex.dex_score import (
+    get_latest_score,
+    get_score_history,
+)
 from app.core.dex.endpoint_registry import (
     create_endpoint,
     deregister_endpoint,
@@ -21,14 +25,9 @@ from app.core.dex.endpoint_registry import (
     list_endpoints,
     update_endpoint,
 )
-from app.core.dex.dex_score import (
-    evaluate_thresholds,
-    get_latest_score,
-    get_score_history,
-)
 from app.core.rate_limit import limiter
 from app.db.database import SessionLocal
-from app.db.models import DexAlert, DexScoreRecord, EmployeeFeedback, EndpointMetricSnapshot
+from app.db.models import DexAlert, EmployeeFeedback, EndpointMetricSnapshot
 
 router = APIRouter(prefix="/api/v1/dex", tags=["dex"])
 logger = logging.getLogger(__name__)
@@ -411,7 +410,6 @@ async def fleet_summary(
     request: Request,
     db: Session = Depends(get_db),
 ) -> dict:
-    from sqlalchemy import func as sqlfunc
 
     endpoints = list_endpoints(db, active_only=True)
     total = len(endpoints)

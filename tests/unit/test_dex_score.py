@@ -1,6 +1,5 @@
 """Unit tests for DEX score calculation engine (app/core/dex/dex_score.py)."""
 
-from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import create_engine
@@ -8,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.database import init_db
-from app.db.models import DexAlert, DexScoreRecord, EndpointMetricSnapshot
+from app.db.models import DexScoreRecord, EndpointMetricSnapshot
 
 
 @pytest.fixture(autouse=True, scope="module")

@@ -10,7 +10,6 @@ from sqlalchemy.pool import StaticPool
 from app.db.database import init_db
 from app.db.models import Endpoint
 
-
 # ---------------------------------------------------------------------------
 # Module-level DB patch
 # ---------------------------------------------------------------------------
@@ -129,7 +128,11 @@ class TestGetEndpoint:
 
     def test_returns_inactive_endpoint(self, db):
         """get_endpoint returns any endpoint regardless of is_active status."""
-        from app.core.dex.endpoint_registry import create_endpoint, deregister_endpoint, get_endpoint
+        from app.core.dex.endpoint_registry import (
+            create_endpoint,
+            deregister_endpoint,
+            get_endpoint,
+        )
 
         create_endpoint(db, "inactive-get-host")
         deregister_endpoint(db, "inactive-get-host")
@@ -145,7 +148,11 @@ class TestGetEndpoint:
 
 class TestListEndpoints:
     def test_lists_active_by_default(self, db):
-        from app.core.dex.endpoint_registry import create_endpoint, deregister_endpoint, list_endpoints
+        from app.core.dex.endpoint_registry import (
+            create_endpoint,
+            deregister_endpoint,
+            list_endpoints,
+        )
 
         create_endpoint(db, "list-active-1")
         create_endpoint(db, "list-active-2")
@@ -159,7 +166,11 @@ class TestListEndpoints:
         assert "list-inactive-1" not in hostnames
 
     def test_lists_all_when_active_only_false(self, db):
-        from app.core.dex.endpoint_registry import create_endpoint, deregister_endpoint, list_endpoints
+        from app.core.dex.endpoint_registry import (
+            create_endpoint,
+            deregister_endpoint,
+            list_endpoints,
+        )
 
         create_endpoint(db, "all-active-host")
         create_endpoint(db, "all-inactive-host")
@@ -244,7 +255,11 @@ class TestUpdateEndpoint:
         assert result is None
 
     def test_can_reactivate_endpoint(self, db):
-        from app.core.dex.endpoint_registry import create_endpoint, deregister_endpoint, update_endpoint
+        from app.core.dex.endpoint_registry import (
+            create_endpoint,
+            deregister_endpoint,
+            update_endpoint,
+        )
 
         create_endpoint(db, "reactivate-host")
         deregister_endpoint(db, "reactivate-host")
@@ -260,7 +275,11 @@ class TestUpdateEndpoint:
 
 class TestDeregisterEndpoint:
     def test_soft_deletes_endpoint(self, db):
-        from app.core.dex.endpoint_registry import create_endpoint, deregister_endpoint, get_endpoint
+        from app.core.dex.endpoint_registry import (
+            create_endpoint,
+            deregister_endpoint,
+            get_endpoint,
+        )
 
         create_endpoint(db, "deregister-host-1")
         result = deregister_endpoint(db, "deregister-host-1")

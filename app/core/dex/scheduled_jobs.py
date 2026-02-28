@@ -27,7 +27,7 @@ async def dex_scan_all_endpoints(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
     from app.core.config import settings
     from app.core.dex.endpoint_registry import list_endpoints
-    from app.core.dex.telemetry_collector import process_completed_scan, trigger_endpoint_scan
+    from app.core.dex.telemetry_collector import process_completed_scan
     from app.db.database import SessionLocal
 
     db = SessionLocal()

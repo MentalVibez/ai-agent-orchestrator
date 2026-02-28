@@ -1,6 +1,6 @@
 """Unit tests for DEX API routes (app/api/v1/routes/dex.py)."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +11,6 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import settings
 from app.db.database import init_db
 from app.main import app
-
 
 # ---------------------------------------------------------------------------
 # Module-level DB patch

@@ -12,7 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.v1.routes import agents, api_keys, dex as dex_routes, metrics, orchestrator, runs, webhooks
+from app.api.v1.routes import agents, api_keys, metrics, orchestrator, runs, webhooks
+from app.api.v1.routes import dex as dex_routes
 from app.api.v1.routes import rag as rag_routes
 from app.core.auth import verify_metrics_token
 from app.core.config import settings

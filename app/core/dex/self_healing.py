@@ -13,7 +13,6 @@ When a DexAlert fires, this module:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -73,8 +72,6 @@ async def _trigger_remediation_run(
     from app.planner.loop import run_planner_loop
 
     goal = _build_goal(action_config, alert)
-    requires_approval = action_config.get("requires_approval", True)
-
     profile = "dex_proactive"
     run = await create_run(
         goal=goal,

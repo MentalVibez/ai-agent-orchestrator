@@ -16,7 +16,6 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.database import init_db
 
-
 # ---------------------------------------------------------------------------
 # Module-level DB patch
 # ---------------------------------------------------------------------------

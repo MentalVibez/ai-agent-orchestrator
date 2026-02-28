@@ -123,3 +123,53 @@ class TestWorker:
             assert minutes == {0, 15, 30, 45}
         finally:
             settings.dex_scan_interval_minutes = original
+
+    @pytest.mark.asyncio
+    async def test_run_planner_marks_failed_on_exception(self):
+        """When run_planner_loop raises, run is marked failed and exception is re-raised."""
+        from unittest.mock import AsyncMock, patch
+
+        worker = _import_worker()
+        mock_loop = AsyncMock(side_effect=RuntimeError("planner exploded"))
+        mock_update = AsyncMock()
+
+        with patch("app.planner.loop.run_planner_loop", mock_loop), \
+             patch("app.core.run_store.update_run", mock_update):
+            with pytest.raises(RuntimeError, match="planner exploded"):
+                await worker.run_planner(
+                    ctx={},
+                    run_id="fail-run-1",
+                    goal="diagnose host",
+                    agent_profile_id="default",
+                    context={},
+                )
+        mock_update.assert_awaited_once_with(
+            "fail-run-1", status="failed", error="planner exploded"
+        )
+
+    @pytest.mark.asyncio
+    async def test_on_job_error_does_not_raise(self):
+        """_on_job_error should log and return silently regardless of exception type."""
+        worker = _import_worker()
+        await worker._on_job_error(ctx={}, job_id="arq-job-abc", exc=ValueError("boom"))
+        await worker._on_job_error(ctx={}, job_id="arq-job-xyz", exc=RuntimeError("oops"))
+
+    def test_worker_settings_max_tries_is_one(self):
+        """max_tries=1 prevents arq from retrying unique runs with the same run_id."""
+        worker = _import_worker()
+        assert worker.WorkerSettings.max_tries == 1
+
+    def test_worker_settings_job_timeout(self):
+        """job_timeout should be 600 seconds (10 minutes)."""
+        worker = _import_worker()
+        assert worker.WorkerSettings.job_timeout == 600
+
+    def test_worker_settings_keep_result(self):
+        """keep_result should be set so failed job results remain inspectable in Redis."""
+        worker = _import_worker()
+        assert worker.WorkerSettings.keep_result == 7200
+
+    def test_worker_settings_on_job_error_is_set(self):
+        """WorkerSettings.on_job_error should be the _on_job_error callback."""
+        worker = _import_worker()
+        assert worker.WorkerSettings.on_job_error is worker._on_job_error

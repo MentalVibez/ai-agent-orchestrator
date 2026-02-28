@@ -269,3 +269,48 @@ class TestProcessCompletedScan:
         assert snap is not None
         assert snap.hostname == "db-verify-host"
         assert snap.cpu_pct == 50.0
+
+
+# ---------------------------------------------------------------------------
+# trigger_endpoint_scan
+# ---------------------------------------------------------------------------
+
+
+class TestTriggerEndpointScan:
+    @pytest.mark.asyncio
+    async def test_returns_run_id(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.core.dex.telemetry_collector import trigger_endpoint_scan
+
+        mock_run = MagicMock()
+        mock_run.run_id = "scan-triggered-run-001"
+        mock_app = MagicMock()
+        mock_app.state.container.get_llm_manager.return_value = MagicMock()
+
+        with patch("app.core.run_store.create_run", new=AsyncMock(return_value=mock_run)), \
+             patch("app.planner.loop.run_planner_loop", new=AsyncMock()), \
+             patch("asyncio.create_task"):
+            run_id = await trigger_endpoint_scan(mock_app, "trigger-scan-host")
+
+        assert run_id == "scan-triggered-run-001"
+
+    @pytest.mark.asyncio
+    async def test_uses_dex_proactive_profile(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.core.dex.telemetry_collector import trigger_endpoint_scan
+
+        mock_run = MagicMock()
+        mock_run.run_id = "profile-check-run"
+        mock_create_run = AsyncMock(return_value=mock_run)
+        mock_app = MagicMock()
+
+        with patch("app.core.run_store.create_run", mock_create_run), \
+             patch("app.planner.loop.run_planner_loop", new=AsyncMock()), \
+             patch("asyncio.create_task"):
+            await trigger_endpoint_scan(mock_app, "profile-host")
+
+        call_kwargs = mock_create_run.call_args.kwargs
+        assert call_kwargs.get("agent_profile_id") == "dex_proactive"
+        assert "profile-host" in call_kwargs.get("goal", "")

@@ -100,3 +100,117 @@ class TestGracefulShutdownMiddlewareUnit:
         middleware = GracefulShutdownMiddleware(FastAPI(), shutdown_event=event)
         event.set()
         assert middleware._shutdown_event.is_set()
+
+
+@pytest.mark.unit
+class TestGracefulShutdownInternals:
+    """Tests for _register_signal_handlers, _handle_sigterm, _wait_and_exit."""
+
+    def test_register_signal_handlers_success_path(self):
+        """When the event loop supports add_signal_handler, it is called with SIGTERM."""
+        import signal
+        from unittest.mock import MagicMock, patch
+
+        mock_loop = MagicMock()
+        mock_loop.add_signal_handler = MagicMock()
+
+        event = asyncio.Event()
+        with patch(
+            "app.middleware.graceful_shutdown.asyncio.get_event_loop",
+            return_value=mock_loop,
+        ):
+            mw = GracefulShutdownMiddleware(FastAPI(), shutdown_event=event)
+
+        mock_loop.add_signal_handler.assert_called_once_with(
+            signal.SIGTERM, mw._handle_sigterm
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_sigterm_sets_shutdown_event(self):
+        """Calling _handle_sigterm() must set the shutdown event."""
+        from unittest.mock import patch
+
+        event = asyncio.Event()
+        mw = GracefulShutdownMiddleware(FastAPI(), shutdown_event=event)
+
+        # Patch ensure_future so we don't schedule a real drain coroutine
+        with patch("app.middleware.graceful_shutdown.asyncio.ensure_future"):
+            mw._handle_sigterm()
+
+        assert event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_handle_sigterm_schedules_wait_and_exit(self):
+        """_handle_sigterm must schedule _wait_and_exit via ensure_future."""
+        from unittest.mock import patch, MagicMock
+
+        event = asyncio.Event()
+        mw = GracefulShutdownMiddleware(FastAPI(), shutdown_event=event)
+
+        with patch(
+            "app.middleware.graceful_shutdown.asyncio.ensure_future"
+        ) as mock_future:
+            mw._handle_sigterm()
+
+        mock_future.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_wait_and_exit_logs_drained_when_no_in_flight(self):
+        """When _in_flight is 0 the loop is skipped and 'drained' is logged."""
+        import logging
+        from unittest.mock import patch
+
+        event = asyncio.Event()
+        mw = GracefulShutdownMiddleware(FastAPI(), shutdown_event=event)
+        mw._in_flight = 0  # nothing pending
+
+        with patch("app.middleware.graceful_shutdown.logger") as mock_log:
+            await mw._wait_and_exit()
+
+        # The 'all requests drained' info log should appear (line 71)
+        info_messages = [str(c) for c in mock_log.info.call_args_list]
+        assert any("drained" in m for m in info_messages)
+
+    @pytest.mark.asyncio
+    async def test_wait_and_exit_drains_eventually(self):
+        """When _in_flight drops to 0 during the drain loop, exit is clean."""
+        from unittest.mock import patch, AsyncMock
+
+        event = asyncio.Event()
+        mw = GracefulShutdownMiddleware(FastAPI(), shutdown_event=event)
+        mw._in_flight = 1
+
+        sleep_calls = [0]
+
+        async def fake_sleep(_):
+            # Simulate the in-flight request finishing on first sleep
+            sleep_calls[0] += 1
+            mw._in_flight = 0
+
+        with patch(
+            "app.middleware.graceful_shutdown.asyncio.sleep", side_effect=fake_sleep
+        ), patch("app.middleware.graceful_shutdown.GRACEFUL_SHUTDOWN_TIMEOUT", 5):
+            await mw._wait_and_exit()
+
+        assert sleep_calls[0] >= 1
+        assert mw._in_flight == 0
+
+    @pytest.mark.asyncio
+    async def test_wait_and_exit_timeout_logs_warning(self):
+        """When deadline expires with requests still in flight, a warning is logged."""
+        from unittest.mock import patch, AsyncMock
+
+        event = asyncio.Event()
+        mw = GracefulShutdownMiddleware(FastAPI(), shutdown_event=event)
+        mw._in_flight = 1  # never drains
+
+        with patch(
+            "app.middleware.graceful_shutdown.asyncio.sleep", new_callable=AsyncMock
+        ), patch(
+            "app.middleware.graceful_shutdown.GRACEFUL_SHUTDOWN_TIMEOUT", 1
+        ), patch("app.middleware.graceful_shutdown.logger") as mock_log:
+            await mw._wait_and_exit()
+
+        # Warning about timeout must appear
+        warning_messages = [str(c) for c in mock_log.warning.call_args_list]
+        assert any("timeout" in m for m in warning_messages)

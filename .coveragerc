@@ -1,5 +1,4 @@
 [run]
-source = app
 omit =
     app/worker.py
     */__init__.py

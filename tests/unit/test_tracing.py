@@ -241,3 +241,83 @@ class TestTracingEnabled:
                 pass
 
         mock_span.set_attribute.assert_not_called()
+
+
+@pytest.mark.unit
+class TestInitTracerHappyPath:
+    """Cover lines 33-42: TracerProvider() succeeds and a tracer is returned."""
+
+    def _reset(self):
+        import app.observability.tracing as tracing
+
+        tracing._initialized = False
+        tracing._tracer = None
+
+    def _make_mocks(self, endpoint: str):
+        """Build mock OTEL modules and return (mock_tracer_obj, sys_modules_patch)."""
+        mock_tracer_obj = MagicMock()
+        mock_provider = MagicMock()
+        mock_provider_cls = MagicMock(return_value=mock_provider)
+        mock_exporter_cls = MagicMock()
+        mock_batch_cls = MagicMock()
+        mock_trace_module = MagicMock()
+        mock_trace_module.get_tracer.return_value = mock_tracer_obj
+
+        otel_sdk = MagicMock()
+        otel_sdk.TracerProvider = mock_provider_cls
+        otel_export = MagicMock()
+        otel_export.BatchSpanProcessor = mock_batch_cls
+        otel_exporter = MagicMock()
+        otel_exporter.OTLPSpanExporter = mock_exporter_cls
+
+        mock_otel = MagicMock()
+        mock_otel.trace = mock_trace_module
+
+        modules = {
+            "opentelemetry": mock_otel,
+            "opentelemetry.trace": mock_trace_module,
+            "opentelemetry.sdk": MagicMock(),
+            "opentelemetry.sdk.trace": otel_sdk,
+            "opentelemetry.sdk.trace.export": otel_export,
+            "opentelemetry.exporter": MagicMock(),
+            "opentelemetry.exporter.otlp": MagicMock(),
+            "opentelemetry.exporter.otlp.proto": MagicMock(),
+            "opentelemetry.exporter.otlp.proto.http": MagicMock(),
+            "opentelemetry.exporter.otlp.proto.http.trace_exporter": otel_exporter,
+        }
+        return mock_tracer_obj, mock_exporter_cls, modules
+
+    def test_init_tracer_with_endpoint_returns_tracer(self):
+        """Covers lines 33-35, 39-42: endpoint set → OTLPSpanExporter(endpoint=...)."""
+        self._reset()
+        import app.observability.tracing as tracing
+
+        endpoint = "http://collector:4318"
+        mock_tracer_obj, mock_exporter_cls, modules = self._make_mocks(endpoint)
+
+        with patch("app.observability.tracing.settings") as mock_settings:
+            mock_settings.otel_enabled = True
+            mock_settings.otel_exporter_otlp_endpoint = endpoint
+            with patch.dict(sys.modules, modules):
+                result = tracing._init_tracer()
+
+        assert result is mock_tracer_obj
+        mock_exporter_cls.assert_called_once_with(endpoint=endpoint)
+        self._reset()
+
+    def test_init_tracer_without_endpoint_uses_default_exporter(self):
+        """Covers lines 33-34, 38-42: no endpoint → OTLPSpanExporter() with no args."""
+        self._reset()
+        import app.observability.tracing as tracing
+
+        mock_tracer_obj, mock_exporter_cls, modules = self._make_mocks("")
+
+        with patch("app.observability.tracing.settings") as mock_settings:
+            mock_settings.otel_enabled = True
+            mock_settings.otel_exporter_otlp_endpoint = ""
+            with patch.dict(sys.modules, modules):
+                result = tracing._init_tracer()
+
+        assert result is mock_tracer_obj
+        mock_exporter_cls.assert_called_once_with()
+        self._reset()

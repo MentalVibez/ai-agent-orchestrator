@@ -357,3 +357,156 @@ class TestExecuteWorkflow:
         assert all(r.status == WorkflowStepStatus.COMPLETED for r in result.step_results)
         step_ids = {r.step_id for r in result.step_results}
         assert step_ids == {"s1", "s2"}
+
+
+@pytest.mark.unit
+class TestStepSkipCondition:
+    """Cover lines 67, 78-79: _skip body and condition-not-met branch."""
+
+    @pytest.fixture
+    def executor(self):
+        return WorkflowExecutor(orchestrator=make_mock_orchestrator())
+
+    @pytest.mark.asyncio
+    async def test_step_skipped_when_condition_false(self, executor):
+        """Condition evaluates to False → _skip() used → SKIPPED status returned."""
+        step = WorkflowStep(
+            step_id="s1",
+            name="s1",
+            agent_id="test_agent",
+            task="task",
+            condition="False",
+        )
+        workflow = make_workflow("wf1", [step])
+        with patch("app.core.persistence.save_workflow_execution", MagicMock()):
+            result = await executor.execute(workflow)
+
+        assert len(result.step_results) == 1
+        assert result.step_results[0].status == WorkflowStepStatus.SKIPPED
+
+
+@pytest.mark.unit
+class TestGatherExceptionHandling:
+    """Cover lines 85-90: asyncio.gather returns an Exception object."""
+
+    @pytest.fixture
+    def executor(self):
+        return WorkflowExecutor(orchestrator=make_mock_orchestrator())
+
+    @pytest.mark.asyncio
+    async def test_gather_exception_result_creates_failed_step(self, executor):
+        """When gather returns an Exception, it is raised and re-caught as a FAILED step."""
+        import app.core.workflow_executor as wf_module
+
+        workflow = make_workflow("wf1", [make_step("s1")])
+
+        async def fake_gather(*args, **kwargs):
+            return [RuntimeError("simulated gather crash")]
+
+        with patch.object(wf_module.asyncio, "gather", new=AsyncMock(side_effect=fake_gather)), \
+             patch("app.core.persistence.save_workflow_execution", MagicMock()):
+            result = await executor.execute(workflow)
+
+        assert result.step_results[0].status == WorkflowStepStatus.FAILED
+        assert "simulated gather crash" in result.step_results[0].error
+
+
+@pytest.mark.unit
+class TestValidateWorkflowEdgeCases:
+    """Cover lines 249-250, 258-259, 269-270: validate_workflow edge cases."""
+
+    @pytest.fixture
+    def executor(self):
+        return WorkflowExecutor(orchestrator=make_mock_orchestrator())
+
+    def test_step_with_empty_step_id_fails_validation(self, executor):
+        """Covers lines 249-250: step_id='' is falsy → return False."""
+        step = WorkflowStep(
+            step_id="",
+            name="Step",
+            agent_id="test_agent",
+            task="task",
+        )
+        workflow = Workflow(
+            workflow_id="wf1",
+            name="Test",
+            description="Test",
+            steps=[step],
+        )
+        assert executor.validate_workflow(workflow) is False
+
+    def test_step_with_empty_agent_id_fails_validation(self, executor):
+        """Covers lines 258-259: agent_id='' is falsy → return False."""
+        step = WorkflowStep(
+            step_id="s1",
+            name="Step",
+            agent_id="",
+            task="task",
+        )
+        workflow = Workflow(
+            workflow_id="wf1",
+            name="Test",
+            description="Test",
+            steps=[step],
+        )
+        assert executor.validate_workflow(workflow) is False
+
+    def test_circular_dependency_detected_by_has_circular(self, executor):
+        """Covers lines 269-270: _has_circular_dependencies returns True → return False."""
+        workflow = make_workflow("wf1", [make_step("s1")])
+        with patch.object(executor, "_has_circular_dependencies", return_value=True):
+            result = executor.validate_workflow(workflow)
+        assert result is False
+
+
+@pytest.mark.unit
+class TestBuildExecutionOrderCircularDeps:
+    """Cover lines 323-325: circular dep fallback in _build_execution_order."""
+
+    @pytest.fixture
+    def executor(self):
+        return WorkflowExecutor(orchestrator=MagicMock())
+
+    def test_circular_dep_returns_all_steps_as_single_batch(self, executor):
+        """When circular deps prevent topological sort, all steps returned as one batch."""
+        # Use MagicMock steps to avoid Pydantic validation
+        s1 = MagicMock()
+        s1.step_id = "s1"
+        s1.depends_on = ["s2"]
+
+        s2 = MagicMock()
+        s2.step_id = "s2"
+        s2.depends_on = ["s1"]
+
+        result = executor._build_execution_order([s1, s2])
+        # Circular dep → fallback: return [steps]
+        assert result == [[s1, s2]]
+
+
+@pytest.mark.unit
+class TestHasCircularDependenciesDetectsCycle:
+    """Cover lines 342-343, 345, 353: DFS cycle detection in _has_circular_dependencies."""
+
+    @pytest.fixture
+    def executor(self):
+        return WorkflowExecutor(orchestrator=MagicMock())
+
+    def test_direct_cycle_detected(self, executor):
+        """s1 → s2 → s1 is a cycle; covers lines 342-343, 345, 353."""
+        s1 = MagicMock()
+        s1.step_id = "s1"
+        s1.depends_on = ["s2"]
+
+        s2 = MagicMock()
+        s2.step_id = "s2"
+        s2.depends_on = ["s1"]
+
+        assert executor._has_circular_dependencies([s1, s2]) is True
+
+    def test_self_loop_detected(self, executor):
+        """s1 → s1 (self-loop); covers the rec_stack branch (line 345)."""
+        s1 = MagicMock()
+        s1.step_id = "s1"
+        s1.depends_on = ["s1"]
+
+        assert executor._has_circular_dependencies([s1]) is True

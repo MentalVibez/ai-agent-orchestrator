@@ -447,7 +447,7 @@ class TestConnectSse:
 @pytest.mark.unit
 class TestGetMcpClientManagerSingleton:
     def test_returns_mcp_client_manager_instance(self):
-        from app.mcp.client_manager import get_mcp_client_manager, MCPClientManager
+        from app.mcp.client_manager import MCPClientManager, get_mcp_client_manager
 
         result = get_mcp_client_manager()
         assert isinstance(result, MCPClientManager)

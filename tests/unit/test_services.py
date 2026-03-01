@@ -1,10 +1,10 @@
 """Unit tests for app/core/services.py — ServiceContainer."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
-from app.core.services import ServiceContainer, get_service_container
+import pytest
 
+from app.core.services import ServiceContainer, get_service_container
 
 # ---------------------------------------------------------------------------
 # initialize()

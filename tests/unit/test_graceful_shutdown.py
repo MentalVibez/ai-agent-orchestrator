@@ -142,7 +142,7 @@ class TestGracefulShutdownInternals:
     @pytest.mark.asyncio
     async def test_handle_sigterm_schedules_wait_and_exit(self):
         """_handle_sigterm must schedule _wait_and_exit via ensure_future."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
 
         event = asyncio.Event()
         mw = GracefulShutdownMiddleware(FastAPI(), shutdown_event=event)
@@ -157,7 +157,6 @@ class TestGracefulShutdownInternals:
     @pytest.mark.asyncio
     async def test_wait_and_exit_logs_drained_when_no_in_flight(self):
         """When _in_flight is 0 the loop is skipped and 'drained' is logged."""
-        import logging
         from unittest.mock import patch
 
         event = asyncio.Event()
@@ -174,7 +173,7 @@ class TestGracefulShutdownInternals:
     @pytest.mark.asyncio
     async def test_wait_and_exit_drains_eventually(self):
         """When _in_flight drops to 0 during the drain loop, exit is clean."""
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import patch
 
         event = asyncio.Event()
         mw = GracefulShutdownMiddleware(FastAPI(), shutdown_event=event)
@@ -198,7 +197,7 @@ class TestGracefulShutdownInternals:
     @pytest.mark.asyncio
     async def test_wait_and_exit_timeout_logs_warning(self):
         """When deadline expires with requests still in flight, a warning is logged."""
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import AsyncMock, patch
 
         event = asyncio.Event()
         mw = GracefulShutdownMiddleware(FastAPI(), shutdown_event=event)

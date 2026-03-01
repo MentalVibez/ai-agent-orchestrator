@@ -9,7 +9,6 @@ from botocore.exceptions import ClientError
 from app.core.exceptions import LLMProviderError
 from app.llm.bedrock import BedrockProvider
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

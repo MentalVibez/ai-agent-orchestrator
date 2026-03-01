@@ -1,6 +1,5 @@
 """Unit tests for app/llm/tool_schema.py — MCP tool schema conversion utilities."""
 
-import pytest
 
 from app.llm.tool_schema import (
     _safe_tool_name,

@@ -9,6 +9,7 @@ idempotency_records — prevents duplicate runs from client retries
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "004_api_keys"

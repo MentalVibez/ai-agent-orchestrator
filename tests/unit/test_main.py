@@ -1,7 +1,7 @@
 """Unit tests for app/main.py — exception handlers, middleware, routes, health check."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import Request
@@ -19,10 +19,10 @@ from app.core.exceptions import (
 )
 from app.db.database import init_db
 from app.main import (
+    _DEPRECATED_PREFIXES,
     ApiVersionHeadersMiddleware,
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware,
-    _DEPRECATED_PREFIXES,
     _check_database_liveness,
     agent_exception_handler,
     app,
@@ -32,7 +32,6 @@ from app.main import (
     service_unavailable_exception_handler,
     validation_exception_handler,
 )
-
 
 # ---------------------------------------------------------------------------
 # Module-level DB patch (prevents "unable to open database file" on Windows)

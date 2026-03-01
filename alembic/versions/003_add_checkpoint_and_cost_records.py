@@ -7,6 +7,7 @@ Create Date: 2026-02-18
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "003_checkpoint"

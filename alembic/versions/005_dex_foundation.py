@@ -13,6 +13,7 @@ Tables added:
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "005_dex_foundation"

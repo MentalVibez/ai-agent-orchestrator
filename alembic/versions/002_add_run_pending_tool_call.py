@@ -5,9 +5,9 @@ Revises: 001_initial
 Create Date: 2025-02-17
 
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "002_pending"
 down_revision = "001_initial"

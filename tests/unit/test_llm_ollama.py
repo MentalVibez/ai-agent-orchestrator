@@ -1,12 +1,11 @@
 """Unit tests for app/llm/ollama.py — OllamaProvider stream() coverage."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.llm.ollama import OllamaProvider
-
 
 # ---------------------------------------------------------------------------
 # Helpers

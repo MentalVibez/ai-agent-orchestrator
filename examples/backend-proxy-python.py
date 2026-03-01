@@ -1,14 +1,14 @@
 """
 Example Backend Proxy for Python/Flask
- * 
+ *
  * This file shows how to integrate the orchestrator API into your existing backend.
  * Add this blueprint to your Flask application.
 """
 
-from flask import Blueprint, request, jsonify
-import requests
 import os
-from typing import Dict, Any
+
+import requests
+from flask import Blueprint, jsonify, request
 
 orchestrator_bp = Blueprint('orchestrator', __name__)
 
@@ -30,13 +30,13 @@ def orchestrate():
         data = request.json
         if not data:
             return jsonify({'error': 'Request body is required'}), 400
-        
+
         message = data.get('message', '')
         context = data.get('context', {})
-        
+
         if not message:
             return jsonify({'error': 'Message is required'}), 400
-        
+
         # Check if orchestrator should be used
         if not should_use_orchestrator(message):
             return jsonify({
@@ -44,7 +44,7 @@ def orchestrate():
                 'message': 'Handled by regular chatbot',
                 'suggestion': 'This query can be handled by your regular chatbot'
             })
-        
+
         # Call orchestrator API
         response = requests.post(
             f'{ORCHESTRATOR_API_URL}/api/v1/orchestrate',
@@ -63,33 +63,33 @@ def orchestrate():
             timeout=30
         )
         response.raise_for_status()
-        
+
         return jsonify({
             'useOrchestrator': True,
             'result': response.json()
         })
-        
+
     except requests.exceptions.Timeout:
         return jsonify({
             'error': 'Orchestrator timeout',
             'message': 'The orchestrator service took too long to respond',
             'useOrchestrator': False
         }), 504
-        
+
     except requests.exceptions.ConnectionError:
         return jsonify({
             'error': 'Orchestrator unavailable',
             'message': 'Cannot connect to orchestrator service',
             'useOrchestrator': False
         }), 503
-        
+
     except requests.exceptions.HTTPError as e:
         return jsonify({
             'error': 'Orchestrator API error',
             'message': e.response.text if e.response else str(e),
             'useOrchestrator': False
         }), e.response.status_code if e.response else 500
-        
+
     except Exception as e:
         return jsonify({
             'error': 'Internal error',
@@ -114,7 +114,7 @@ def get_agents():
         )
         response.raise_for_status()
         return jsonify(response.json())
-        
+
     except Exception as e:
         return jsonify({
             'error': 'Failed to fetch agents',
@@ -128,29 +128,29 @@ def should_use_orchestrator(message: str) -> bool:
     You can enhance this with ML-based intent classification.
     """
     lower_message = message.lower()
-    
+
     # Keywords that indicate specialized agent needs
     orchestrator_keywords = [
         # Network-related
         'network', 'connectivity', 'ping', 'dns', 'latency', 'connection',
         'reachable', 'timeout', 'packet', 'route', 'traceroute',
-        
+
         # System-related
         'system', 'monitor', 'cpu', 'memory', 'disk', 'performance',
         'load', 'usage', 'process', 'thread', 'resource',
-        
+
         # Log-related
         'log', 'error', 'exception', 'debug', 'trace', 'troubleshoot',
         'diagnose', 'analyze logs', 'error log',
-        
+
         # Infrastructure-related
         'infrastructure', 'deploy', 'server', 'configure', 'setup',
         'provision', 'environment',
-        
+
         # General diagnostics
         'diagnose', 'troubleshoot', 'check', 'verify', 'test connection'
     ]
-    
+
     return any(keyword in lower_message for keyword in orchestrator_keywords)
 
 

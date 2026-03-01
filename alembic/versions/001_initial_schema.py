@@ -7,9 +7,9 @@ Create Date: 2025-02-17
 Compatible with SQLite (default) and PostgreSQL. Set DATABASE_URL=postgresql://...
 and run: alembic upgrade head
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "001_initial"
 down_revision = None

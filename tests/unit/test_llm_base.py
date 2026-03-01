@@ -1,12 +1,10 @@
 """Unit tests for app/llm/base.py — LLMProvider abstract base class."""
 
-from typing import AsyncIterator, Dict, Any, List, Optional
-from unittest.mock import AsyncMock
+from typing import Any, AsyncIterator, Dict, Optional
 
 import pytest
 
 from app.llm.base import LLMProvider
-
 
 # ---------------------------------------------------------------------------
 # Minimal concrete subclass that calls super() to cover abstract method bodies

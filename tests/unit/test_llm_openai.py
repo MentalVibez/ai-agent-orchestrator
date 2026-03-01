@@ -1,13 +1,11 @@
 """Unit tests for app/llm/openai.py — OpenAIProvider."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from openai import OpenAIError
 
 from app.llm.openai import OpenAIProvider
-
 
 # ---------------------------------------------------------------------------
 # Helpers

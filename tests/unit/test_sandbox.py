@@ -2,8 +2,7 @@
 
 import asyncio
 import sys
-from threading import Timer
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -177,8 +176,7 @@ class TestAgentSandbox:
 
     def test_get_sandbox_singleton(self):
         """Test that get_sandbox returns singleton."""
-        sandbox1 = get_sandbox()
-        sandbox2 = get_sandbox()
+        assert get_sandbox() is get_sandbox()
 
     # ------------------------------------------------------------------
     # execute_with_limits error paths (lines 196-221)

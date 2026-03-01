@@ -227,3 +227,241 @@ class TestShutdown:
         """shutdown() is safe to call when no connections were made."""
         mgr = _make_manager()
         await mgr.shutdown()  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# Additional initialize() paths (lines 59-60, 62-67, 72-73, 104-106)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestInitializeAdditionalPaths:
+    """Cover transport routing and error paths inside initialize()."""
+
+    async def test_unsupported_transport_logs_warning_and_skips(self):
+        """Lines 62-67: server with transport='websocket' → warning, no session."""
+        mgr = _make_manager()
+        servers = [("srv1", {"transport": "websocket", "command": "cmd"})]
+
+        with patch(
+            "app.mcp.client_manager._get_mcp_client",
+            return_value=(MagicMock(), MagicMock(), MagicMock()),
+        ), patch(
+            "app.mcp.client_manager.get_enabled_mcp_servers", return_value=servers
+        ):
+            result = await mgr.initialize()
+
+        assert result is False
+        assert "srv1" not in mgr._sessions
+        assert mgr._initialized is True
+
+    async def test_missing_command_logs_warning_and_skips(self):
+        """Lines 72-73: stdio server without 'command' key → warning, no session."""
+        mgr = _make_manager()
+        servers = [("srv1", {"transport": "stdio"})]  # no 'command' key
+
+        with patch(
+            "app.mcp.client_manager._get_mcp_client",
+            return_value=(MagicMock(), MagicMock(), MagicMock()),
+        ), patch(
+            "app.mcp.client_manager.get_enabled_mcp_servers", return_value=servers
+        ):
+            result = await mgr.initialize()
+
+        assert result is False
+        assert "srv1" not in mgr._sessions
+
+    async def test_sse_transport_delegates_to_connect_sse(self):
+        """Lines 59-60: transport='sse' calls _connect_sse() then continues."""
+        from app.mcp.client_manager import MCPClientManager
+
+        mgr = _make_manager()
+        servers = [("srv1", {"transport": "sse", "url": "http://example.com"})]
+
+        with patch(
+            "app.mcp.client_manager._get_mcp_client",
+            return_value=(MagicMock(), MagicMock(), MagicMock()),
+        ), patch(
+            "app.mcp.client_manager.get_enabled_mcp_servers", return_value=servers
+        ), patch.object(
+            MCPClientManager, "_connect_sse", new_callable=AsyncMock
+        ) as mock_connect:
+            await mgr.initialize()
+
+        mock_connect.assert_called_once()
+        call_args = mock_connect.call_args
+        assert call_args[0][0] == "srv1"
+
+    async def test_outer_exception_closes_exit_stack_and_reraises(self):
+        """Lines 104-106: _connect_sse raising propagates out; aclose() runs."""
+        from app.mcp.client_manager import MCPClientManager
+
+        mgr = _make_manager()
+        servers = [("srv1", {"transport": "sse", "url": "http://example.com"})]
+
+        with patch(
+            "app.mcp.client_manager._get_mcp_client",
+            return_value=(MagicMock(), MagicMock(), MagicMock()),
+        ), patch(
+            "app.mcp.client_manager.get_enabled_mcp_servers", return_value=servers
+        ), patch.object(
+            MCPClientManager,
+            "_connect_sse",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("sse connect failed"),
+        ):
+            with pytest.raises(RuntimeError, match="sse connect failed"):
+                await mgr.initialize()
+
+        # _initialized must NOT have been set — exception interrupted the flow
+        assert mgr._initialized is False
+
+
+# ---------------------------------------------------------------------------
+# _connect_sse()  — lines 116-153 entirely uncovered before this file
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestConnectSse:
+    """Direct tests for MCPClientManager._connect_sse()."""
+
+    async def _make_mgr_with_stack(self):
+        """Helper: build a manager with an entered AsyncExitStack."""
+        from contextlib import AsyncExitStack
+
+        mgr = _make_manager()
+        mgr._exit_stack = AsyncExitStack()
+        await mgr._exit_stack.__aenter__()
+        return mgr
+
+    async def test_no_url_logs_warning_and_returns_early(self):
+        """Lines 116-119: missing 'url' → log warning, return, no session."""
+        mgr = await self._make_mgr_with_stack()
+        await mgr._connect_sse("srv", {}, MagicMock())  # no url in cfg
+        assert "srv" not in mgr._sessions
+        await mgr._exit_stack.aclose()
+
+    async def test_sse_import_error_logs_warning_and_returns(self):
+        """Lines 120-127: ImportError for mcp.client.sse → log warning, return."""
+        mgr = await self._make_mgr_with_stack()
+
+        with patch.dict(
+            "sys.modules",
+            {"mcp": MagicMock(), "mcp.client": MagicMock(), "mcp.client.sse": None},
+        ):
+            await mgr._connect_sse("srv", {"url": "http://example.com"}, MagicMock())
+
+        assert "srv" not in mgr._sessions
+        await mgr._exit_stack.aclose()
+
+    async def test_success_path_connects_and_caches_tools(self):
+        """Lines 128-151: happy path — connects, discovers tools, caches them."""
+        mgr = await self._make_mgr_with_stack()
+
+        # Build mock SSE transport context manager
+        mock_read, mock_write = MagicMock(), MagicMock()
+
+        class _SseCtx:
+            async def __aenter__(self_):
+                return (mock_read, mock_write)
+            async def __aexit__(self_, *a):
+                pass
+
+        mock_sse_client = MagicMock(return_value=_SseCtx())
+
+        # Build mock ClientSession context manager
+        mock_session = MagicMock()
+        mock_session.initialize = AsyncMock()
+        mock_tool = MagicMock()
+        mock_tool.name = "ping"
+        mock_tool.description = "Ping a host"
+        mock_tool.inputSchema = {"type": "object"}
+        mock_list_resp = MagicMock()
+        mock_list_resp.tools = [mock_tool]
+        mock_session.list_tools = AsyncMock(return_value=mock_list_resp)
+
+        class _SessionCtx:
+            async def __aenter__(self_):
+                return mock_session
+            async def __aexit__(self_, *a):
+                pass
+
+        mock_client_session_cls = MagicMock(return_value=_SessionCtx())
+
+        mock_sse_module = MagicMock()
+        mock_sse_module.sse_client = mock_sse_client
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "mcp": MagicMock(),
+                "mcp.client": MagicMock(),
+                "mcp.client.sse": mock_sse_module,
+            },
+        ):
+            await mgr._connect_sse(
+                "srv",
+                {"url": "http://example.com", "headers": {"Authorization": "Bearer tok"}},
+                mock_client_session_cls,
+            )
+
+        assert "srv" in mgr._sessions
+        assert mgr._sessions["srv"] is mock_session
+        assert len(mgr._tools_cache["srv"]) == 1
+        assert mgr._tools_cache["srv"][0]["name"] == "ping"
+        mock_session.initialize.assert_called_once()
+        await mgr._exit_stack.aclose()
+
+    async def test_exception_in_sse_connection_is_logged(self):
+        """Lines 152-153: exception during connect is caught and logged."""
+        mgr = await self._make_mgr_with_stack()
+
+        mock_sse_module = MagicMock()
+        mock_sse_module.sse_client = MagicMock(
+            side_effect=ConnectionRefusedError("refused")
+        )
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "mcp": MagicMock(),
+                "mcp.client": MagicMock(),
+                "mcp.client.sse": mock_sse_module,
+            },
+        ), patch("app.mcp.client_manager.logger") as mock_log:
+            await mgr._connect_sse("srv", {"url": "http://example.com"}, MagicMock())
+
+        assert "srv" not in mgr._sessions
+        mock_log.exception.assert_called_once()
+        await mgr._exit_stack.aclose()
+
+
+# ---------------------------------------------------------------------------
+# get_mcp_client_manager() singleton  (line 219)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetMcpClientManagerSingleton:
+    def test_returns_mcp_client_manager_instance(self):
+        from app.mcp.client_manager import get_mcp_client_manager, MCPClientManager
+
+        result = get_mcp_client_manager()
+        assert isinstance(result, MCPClientManager)
+
+    def test_returns_same_instance_on_repeated_calls(self):
+        """Line 219: singleton — second call skips construction."""
+        import app.mcp.client_manager as cm_module
+        from app.mcp.client_manager import get_mcp_client_manager
+
+        original = cm_module._mcp_client_manager
+        cm_module._mcp_client_manager = None
+        try:
+            m1 = get_mcp_client_manager()
+            m2 = get_mcp_client_manager()
+            assert m1 is m2
+        finally:
+            cm_module._mcp_client_manager = original

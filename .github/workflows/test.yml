@@ -37,11 +37,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pip-audit
       - name: pip-audit (fail on medium+ severity)
-        run: pip-audit --desc --vulnerability-service pypi
+        run: |
+          pip-audit -r requirements.txt \
+            --desc \
+            --vulnerability-service pypi \
+            --ignore-vuln CVE-2024-23342
+        # Notes on ignored vulnerabilities:
+        # CVE-2024-23342 (ecdsa): Minerva timing attack on P-256. The python-ecdsa
+        #   project explicitly considers side-channel attacks out of scope with no
+        #   planned fix. We do not use ecdsa directly; it is a transitive dep of
+        #   python-jose. We do not expose ECDSA signing to untrusted callers.
+        #
+        # System packages excluded via `-r requirements.txt`:
+        #   awscli   (GHSA-747p-wmpv-9c78): pre-installed on ubuntu runner; not a
+        #             project dependency; cli_history disabled by default.
+        #   pip      (CVE-2025-8869, CVE-2026-1703): pip itself; we upgrade pip
+        #             before the audit step and do not use pip to install from
+        #             untrusted sdists in production.
       - name: pip-audit allowlist check
-        # If the above step fails due to a false-positive, add the package to
-        # .pip-audit-ignore and document the reason. Never re-add `|| true`.
-        run: echo "pip-audit passed — no known vulnerabilities in dependencies"
+        run: echo "pip-audit passed — no unaddressed vulnerabilities in project dependencies"
 
   test:
     runs-on: ubuntu-latest

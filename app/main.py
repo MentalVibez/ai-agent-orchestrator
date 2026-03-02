@@ -61,6 +61,31 @@ async def lifespan(app: FastAPI):
                 "Set DATABASE_URL to a PostgreSQL connection string for production deployments."
             )
 
+        # Production security configuration checks — errors logged but not fatal
+        # so that a misconfigured staging deploy surfaces problems immediately
+        # without taking down a potentially-running instance.
+        if not settings.debug:
+            if not settings.metrics_token:
+                logger.error(
+                    "METRICS_TOKEN is not set. The /metrics endpoint falls back to API_KEY "
+                    "authentication. Set METRICS_TOKEN to a separate scrape token so that "
+                    "Prometheus credentials are isolated from the main API key."
+                )
+            if settings.webhook_require_auth and not settings.webhook_secret:
+                logger.error(
+                    "WEBHOOK_REQUIRE_AUTH=true but WEBHOOK_SECRET is empty. "
+                    "Incoming Prometheus Alertmanager webhooks will be rejected with 401. "
+                    "Set WEBHOOK_SECRET to a strong random string (e.g. openssl rand -hex 32) "
+                    "or set WEBHOOK_REQUIRE_AUTH=false to allow unauthenticated webhooks."
+                )
+            if not settings.agent_workspace_root:
+                logger.warning(
+                    "AGENT_WORKSPACE_ROOT is not set. File-system agent tools (read, list, search) "
+                    "will use the process working directory as the root, which may allow agents to "
+                    "access files outside the intended workspace. Set AGENT_WORKSPACE_ROOT to an "
+                    "absolute path (e.g. /app/workspace) to restrict file access."
+                )
+
         # Initialize service container (this will initialize all services)
         container = get_service_container()
         container.initialize()
@@ -263,6 +288,7 @@ async def llm_provider_exception_handler(request: Request, exc: LLMProviderError
     )
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        headers={"Retry-After": "10"},
         content={
             "error": {
                 "code": exc.error_code,
@@ -309,6 +335,7 @@ async def service_unavailable_exception_handler(request: Request, exc: ServiceUn
     )
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        headers={"Retry-After": "10"},
         content={
             "error": {
                 "code": exc.error_code,

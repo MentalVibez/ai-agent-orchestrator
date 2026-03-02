@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     ollama_model: str = Field(default="llama2", alias="OLLAMA_MODEL")
 
     # Server Settings
-    host: str = Field(default="0.0.0.0", alias="HOST")
+    host: str = Field(default="0.0.0.0", alias="HOST")  # nosec B104 — intentional: containerized service binds all interfaces; restricted by NetworkPolicy/K8s ingress
     port: int = Field(default=8000, alias="PORT")
 
     # Security Settings

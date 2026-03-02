@@ -152,7 +152,7 @@ class WorkflowExecutor:
         if not condition:
             return True
         try:
-            result = eval(condition, {"__builtins__": {}}, {"context": context})  # noqa: S307
+            result = eval(condition, {"__builtins__": {}}, {"context": context})  # noqa: S307  # nosec B307
             return bool(result)
         except Exception as e:
             logger.warning("Condition evaluation failed (%r): %s — skipping step", condition, e)

@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: orchestrator-pdb
+  labels:
+    app: ai-agent-orchestrator
+spec:
+  # With 3 replicas: always keep at least 2 running during voluntary disruptions
+  # (node drains, rolling upgrades). Prevents a simultaneous drain of all pods.
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: ai-agent-orchestrator

@@ -19,5 +19,9 @@ data:
   AWS_REGION: "us-east-1"
   RATE_LIMIT_PER_MINUTE: "60"
   REQUIRE_API_KEY: "true"
-  DATABASE_URL: "sqlite:///app/data/orchestrator.db"
+  # DATABASE_URL must NOT be set here — it contains credentials and must come
+  # from the orchestrator-secrets Secret (see secret.yaml.example).
+  # SQLite is not suitable for multi-replica K8s deployments (single-writer,
+  # no horizontal scaling, data lost when PVC is evicted).
+  # Use: DATABASE_URL=postgresql://user:pass@postgres-service:5432/orchestrator
 

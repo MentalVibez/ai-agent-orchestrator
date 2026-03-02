@@ -1,0 +1,75 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orchestrator-network-policy
+  labels:
+    app: ai-agent-orchestrator
+spec:
+  podSelector:
+    matchLabels:
+      app: ai-agent-orchestrator
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow traffic from ingress controller (adjust label to match your cluster)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+
+    # Allow Prometheus scrape traffic
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8000
+
+    # Allow K8s kubelet health probes (from host network, no selector needed)
+    - ports:
+        - protocol: TCP
+          port: 8000
+
+  egress:
+    # Allow DNS resolution
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Allow PostgreSQL (default port; adjust if using a different port or namespace)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Allow outbound HTTPS — required for AWS Bedrock, OpenAI API, Ollama
+    - ports:
+        - protocol: TCP
+          port: 443
+
+    # Allow Ollama local (default port; only needed if LLM_PROVIDER=ollama)
+    - ports:
+        - protocol: TCP
+          port: 11434
+
+    # Allow Redis (only needed if RUN_QUEUE_URL is set)
+    - ports:
+        - protocol: TCP
+          port: 6379

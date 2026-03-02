@@ -1,0 +1,149 @@
+---
+# PostgreSQL credentials — MUST be created before applying this file.
+# Copy postgres-secret.yaml.example, fill in real values, then:
+#   kubectl apply -f k8s/postgres-secret.yaml -n ai-agent-orchestrator
+#
+# Secret keys expected: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: ai-agent-orchestrator
+  labels:
+    app: postgres
+    component: database
+type: Opaque
+stringData:
+  POSTGRES_USER: "orchestrator"
+  POSTGRES_DB: "orchestrator"
+  # POSTGRES_PASSWORD must be replaced with a strong value before applying.
+  # Generate one: openssl rand -base64 32
+  POSTGRES_PASSWORD: "CHANGE_ME_BEFORE_APPLY"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: ai-agent-orchestrator
+  labels:
+    app: postgres
+    component: database
+spec:
+  # ClusterIP — PostgreSQL is only reachable from inside the cluster.
+  # The orchestrator connects via DATABASE_URL using this service name.
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgres
+  selector:
+    app: postgres
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: ai-agent-orchestrator
+  labels:
+    app: postgres
+    component: database
+spec:
+  serviceName: postgres-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        component: database
+    spec:
+      # Terminate existing connections before shutdown to avoid data corruption
+      terminationGracePeriodSeconds: 60
+
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgres
+
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+            # Store data on the PVC, not the ephemeral container layer
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - $(POSTGRES_USER)
+                - -d
+                - $(POSTGRES_DB)
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - $(POSTGRES_USER)
+                - -d
+                - $(POSTGRES_DB)
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+  # PVC provisioned automatically per StatefulSet pod
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+        labels:
+          app: postgres
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            # Adjust to expected data volume. Start at 20Gi; resize without downtime
+            # via `kubectl patch pvc postgres-data-postgres-0 -p '{"spec":{"resources":{"requests":{"storage":"50Gi"}}}}'`
+            storage: 20Gi
+        # storageClassName: standard  # Uncomment and set to match your cluster's StorageClass
+        #   GKE: standard-rwo | EKS: gp3 | AKS: managed-premium | Minikube: standard

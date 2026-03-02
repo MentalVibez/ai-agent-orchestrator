@@ -1,0 +1,59 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-agent-orchestrator-ingress
+  namespace: ai-agent-orchestrator
+  labels:
+    app: ai-agent-orchestrator
+  annotations:
+    # NGINX ingress controller — install with:
+    #   helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+    #     --namespace ingress-nginx --create-namespace
+    kubernetes.io/ingress.class: nginx
+
+    # TLS certificate via cert-manager + Let's Encrypt.
+    # Install cert-manager: https://cert-manager.io/docs/installation/helm/
+    # Then create a ClusterIssuer named "letsencrypt-prod" pointing to ACME.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+
+    # Increase body size limit for large agent payloads (default is 1m which
+    # is too small for complex workflow definitions with embedded documents)
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+    # Connection timeouts — must be ≥ PLANNER_LLM_TIMEOUT_SECONDS (default 120s)
+    # to avoid the ingress killing long-running agent orchestration requests.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "180"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "180"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+
+    # Rate limiting at the ingress layer (defence-in-depth; app also rate-limits)
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "3"
+
+    # Force HTTPS — redirect all plain HTTP to HTTPS
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # Security headers (supplements app-level SecurityHeadersMiddleware)
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Robots-Tag: noindex, nofollow";
+
+spec:
+  # TLS — cert-manager will provision a certificate automatically once
+  # the DNS A record for the host points to the ingress controller's LoadBalancer IP.
+  tls:
+    - hosts:
+        - api.yourdomain.com   # CHANGE THIS to your actual domain
+      secretName: orchestrator-tls-cert  # cert-manager stores the cert here
+
+  rules:
+    - host: api.yourdomain.com   # CHANGE THIS to match the TLS host above
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-agent-orchestrator
+                port:
+                  name: http

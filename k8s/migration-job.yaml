@@ -1,0 +1,75 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Name includes a version placeholder so each release creates a new Job
+  # object rather than trying to re-run an already-completed one.
+  # The deploy script substitutes IMAGE_TAG before applying.
+  name: orchestrator-migration
+  namespace: ai-agent-orchestrator
+  labels:
+    app: ai-agent-orchestrator
+    component: migration
+  annotations:
+    # Automatically clean up completed Jobs after 1 hour
+    # (requires TTLAfterFinished feature gate, enabled by default in K8s 1.23+)
+    ttl.kubernetes.io/seconds: "3600"
+spec:
+  # Do not retry on failure — migration failures need manual investigation.
+  # A failed migration leaves the DB in a known state; retrying blindly may
+  # not help and could be confusing in logs.
+  backoffLimit: 0
+  # Hard deadline: if the migration takes longer than 5 minutes, kill it
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app: ai-agent-orchestrator
+        component: migration
+    spec:
+      restartPolicy: Never
+      # Run as the same non-root user as the app container
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+
+      initContainers:
+        # Wait for PostgreSQL to be accepting connections before running migrations.
+        # Uses the same postgres image to avoid pulling an extra tool image.
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres-service -p 5432 -U $POSTGRES_USER; do
+                echo "Waiting for PostgreSQL to be ready..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready."
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+
+      containers:
+        - name: alembic-migrate
+          # IMAGE is substituted by the deploy script with the exact image being deployed.
+          # Example: ghcr.io/mentalvibez/ai-agent-orchestrator:v1.2.3
+          image: ghcr.io/OWNER/ai-agent-orchestrator:IMAGE_TAG
+          imagePullPolicy: Always
+          command:
+            - alembic
+            - upgrade
+            - head
+          envFrom:
+            - secretRef:
+                name: orchestrator-secrets
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"

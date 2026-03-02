@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-agent-orchestrator
+  labels:
+    # Standard label for tooling (Prometheus, network policies, etc.)
+    app.kubernetes.io/name: ai-agent-orchestrator
+    # Required by NetworkPolicy namespaceSelector rules in networkpolicy.yaml
+    kubernetes.io/metadata.name: ai-agent-orchestrator

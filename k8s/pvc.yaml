@@ -1,14 +1,26 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: orchestrator-db-pvc
+  # This PVC is for ChromaDB (RAG/vector store) persistence.
+  # Only needed if CHROMA_PERSIST_DIRECTORY=/app/chroma is set.
+  # If you are not using the RAG endpoints, this PVC and the volume mount
+  # in deployment.yaml can be left commented out.
+  name: orchestrator-chroma-pvc
+  namespace: ai-agent-orchestrator
   labels:
     app: ai-agent-orchestrator
+    component: rag-storage
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
-  storageClassName: standard  # Adjust based on your cluster
-
+      # Size based on expected document corpus. ChromaDB stores embeddings as
+      # float32 vectors; 10k docs at 1536-dim ≈ ~60MB. 5Gi is comfortable headroom.
+      storage: 5Gi
+  # storageClassName: standard
+  # Uncomment and set to match your cluster's StorageClass:
+  #   GKE:       standard-rwo
+  #   EKS:       gp3
+  #   AKS:       managed-premium
+  #   Minikube:  standard  (default — can leave commented)

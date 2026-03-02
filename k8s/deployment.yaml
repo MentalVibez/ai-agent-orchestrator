@@ -2,71 +2,126 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ai-agent-orchestrator
+  namespace: ai-agent-orchestrator
   labels:
     app: ai-agent-orchestrator
+  annotations:
+    # IMAGE_TAG is substituted by the deploy script (scripts/k8s-deploy.sh)
+    # with the exact semver tag being deployed (e.g. v1.2.3).
+    # Do NOT manually edit the image field below — use the deploy script.
+    deployment.kubernetes.io/revision: "1"
 spec:
   replicas: 3
   selector:
     matchLabels:
       app: ai-agent-orchestrator
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Replace one pod at a time; never go below minAvailable (set by PDB).
+      maxUnavailable: 0
+      maxSurge: 1
   template:
     metadata:
       labels:
         app: ai-agent-orchestrator
+      annotations:
+        # Forces a rollout when the ConfigMap changes (hash changes → new pods)
+        # The deploy script updates this with: checksum/config: $(kubectl get cm ... -o json | sha256sum)
+        checksum/config: "placeholder-updated-by-deploy-script"
     spec:
-      containers:
-      - name: orchestrator
-        image: ai-agent-orchestrator:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8000
-          name: http
-        env:
-        - name: APP_NAME
-          value: "AI Agent Orchestrator"
-        - name: APP_VERSION
-          value: "1.0.0"
-        - name: DEBUG
-          value: "false"
-        - name: LOG_LEVEL
-          value: "INFO"
-        - name: HOST
-          value: "0.0.0.0"
-        - name: PORT
-          value: "8000"
-        envFrom:
-        - secretRef:
-            name: orchestrator-secrets
-        - configMapRef:
-            name: orchestrator-config
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "500m"
-          limits:
-            memory: "1Gi"
-            cpu: "1000m"
-        livenessProbe:
-          httpGet:
-            path: /api/v1/health
-            port: 8000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /api/v1/health
-            port: 8000
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
-        volumeMounts:
-        - name: db-storage
-          mountPath: /app/data
-      volumes:
-      - name: db-storage
-        persistentVolumeClaim:
-          claimName: orchestrator-db-pvc
+      # Spread pods across nodes — prevents all 3 landing on the same node
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: ai-agent-orchestrator
 
+      # Give SIGTERM 45s before SIGKILL; GracefulShutdownMiddleware drains in-flight requests
+      terminationGracePeriodSeconds: 45
+
+      initContainers:
+        # Block app startup until PostgreSQL is accepting connections.
+        # Without this, the app starts, tries to connect, fails the health check,
+        # and K8s restarts it repeatedly — wasting time and producing noisy logs.
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres-service -p 5432 -U $POSTGRES_USER; do
+                echo "Waiting for PostgreSQL..."
+                sleep 3
+              done
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+
+      containers:
+        - name: orchestrator
+          # Image is updated by scripts/k8s-deploy.sh on each release.
+          # Format: ghcr.io/<owner>/ai-agent-orchestrator:<semver-tag>
+          image: ghcr.io/OWNER/ai-agent-orchestrator:latest
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+
+          # Load non-sensitive config from ConfigMap, secrets from Secret.
+          # Do not duplicate values here — envFrom handles all of them.
+          envFrom:
+            - configMapRef:
+                name: orchestrator-config
+            - secretRef:
+                name: orchestrator-secrets
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              # 2Gi: LLM responses with large context windows can spike memory.
+              # Monitor with `kubectl top pods -n ai-agent-orchestrator` and adjust.
+              memory: "2Gi"
+              cpu: "1000m"
+
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            # 30s gives migrations + MCP startup time to complete
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            # 3 consecutive failures = pod is replaced
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            # 1 failure immediately marks pod NotReady and removes it from the
+            # Service endpoint list — avoids sending traffic to an unhealthy pod
+            failureThreshold: 1
+
+          # Only mount a volume if RAG/ChromaDB is enabled (CHROMA_PERSIST_DIRECTORY=/app/chroma)
+          # Uncomment this block and the volumes section below if using persistent RAG storage:
+          # volumeMounts:
+          #   - name: chroma-storage
+          #     mountPath: /app/chroma
+
+      # volumes:
+      #   - name: chroma-storage
+      #     persistentVolumeClaim:
+      #       claimName: orchestrator-chroma-pvc

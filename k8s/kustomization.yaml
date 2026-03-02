@@ -1,0 +1,39 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# All resources are placed in the ai-agent-orchestrator namespace.
+# The namespace is created first by scripts/k8s-deploy.sh before kustomize apply.
+namespace: ai-agent-orchestrator
+
+# Resource apply order — kustomize applies these in the listed order.
+# IMPORTANT: The migration Job (migration-job.yaml) is intentionally excluded here.
+# It is applied separately by scripts/k8s-deploy.sh BEFORE the Deployment update
+# and must complete successfully before the app pods roll out.
+resources:
+  # 1. Namespace (must exist before anything else)
+  - namespace.yaml
+
+  # 2. Configuration — ConfigMap and Secrets
+  - configmap.yaml
+  # NOTE: Do NOT commit a real secrets file. Apply secrets manually:
+  #   kubectl apply -f k8s/postgres-secret.yaml -n ai-agent-orchestrator
+  #   kubectl apply -f k8s/secret.yaml           -n ai-agent-orchestrator
+  # (copied from secret.yaml.example with real values)
+
+  # 3. Database infrastructure
+  - postgres.yaml
+
+  # 4. Availability and reliability policies
+  - pdb.yaml
+  - networkpolicy.yaml
+
+  # 5. Storage (ChromaDB — optional, only if RAG is enabled)
+  # - pvc.yaml  # Uncomment if CHROMA_PERSIST_DIRECTORY is set
+
+  # 6. Application
+  - service.yaml
+  - deployment.yaml
+  - hpa.yaml
+
+  # 7. External access
+  - ingress.yaml

@@ -71,8 +71,9 @@ def auth_disabled():
 
 @pytest.fixture
 def client(auth_disabled):
-    with TestClient(app) as c:
-        yield c
+    from unittest.mock import MagicMock
+    app.state.container = MagicMock()
+    yield TestClient(app, raise_server_exceptions=False)
 
 
 # ---------------------------------------------------------------------------

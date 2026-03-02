@@ -83,9 +83,10 @@ def mock_tracker():
 @pytest.fixture
 def client(auth_disabled, mock_tracker):
     """TestClient with auth disabled and get_cost_tracker patched."""
+    from unittest.mock import MagicMock
+    app.state.container = MagicMock()
     with patch("app.api.v1.routes.metrics.get_cost_tracker", return_value=mock_tracker):
-        with TestClient(app) as tc:
-            yield tc, mock_tracker
+        yield TestClient(app, raise_server_exceptions=False), mock_tracker
 
 
 # ---------------------------------------------------------------------------

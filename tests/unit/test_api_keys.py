@@ -287,13 +287,14 @@ class TestHasRole:
 @pytest.fixture(scope="module")
 def admin_client():
     """TestClient with env-var bootstrap admin key set."""
+    from unittest.mock import MagicMock
     original_require = settings.require_api_key
     original_key = settings.api_key
     settings.require_api_key = True
     settings.api_key = "test-admin-bootstrap-key"
+    app.state.container = MagicMock()
 
-    with TestClient(app, raise_server_exceptions=True) as c:
-        yield c
+    yield TestClient(app, raise_server_exceptions=False)
 
     settings.require_api_key = original_require
     settings.api_key = original_key

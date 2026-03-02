@@ -78,9 +78,10 @@ def mock_rag():
 @pytest.fixture
 def client(auth_disabled, mock_rag):
     """TestClient with auth disabled and _get_rag patched."""
+    from unittest.mock import MagicMock
+    app.state.container = MagicMock()
     with patch("app.api.v1.routes.rag._get_rag", return_value=mock_rag):
-        with TestClient(app) as c:
-            yield c, mock_rag
+        yield TestClient(app, raise_server_exceptions=False), mock_rag
 
 
 # ---------------------------------------------------------------------------
@@ -190,11 +191,12 @@ class TestRagUnavailable:
                 detail="RAG unavailable: No module named 'chromadb'",
             )
 
+        app.state.container = MagicMock()
         with patch("app.api.v1.routes.rag._get_rag", side_effect=_get_rag_503):
-            with TestClient(app) as tc:
-                response = tc.post(
-                    "/api/v1/rag/index",
-                    json={"collection": "c", "document_id": "d", "text": "t"},
-                )
+            tc = TestClient(app, raise_server_exceptions=False)
+            response = tc.post(
+                "/api/v1/rag/index",
+                json={"collection": "c", "document_id": "d", "text": "t"},
+            )
         assert response.status_code == 503
         assert "RAG unavailable" in response.json()["detail"]

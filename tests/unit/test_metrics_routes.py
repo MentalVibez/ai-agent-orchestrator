@@ -131,9 +131,10 @@ class TestGetCostMetrics:
     def test_returns_500_on_exception(self, auth_disabled):
         tracker = MagicMock()
         tracker.get_total_cost.side_effect = RuntimeError("db down")
+        app.state.container = MagicMock()
         with patch("app.api.v1.routes.metrics.get_cost_tracker", return_value=tracker):
-            with TestClient(app) as tc:
-                response = tc.get("/api/v1/metrics/costs")
+            tc = TestClient(app, raise_server_exceptions=False)
+            response = tc.get("/api/v1/metrics/costs")
         assert response.status_code == 500
 
 
@@ -175,7 +176,8 @@ class TestGetDailyCost:
     def test_returns_500_on_exception(self, auth_disabled):
         tracker = MagicMock()
         tracker.get_daily_cost.side_effect = RuntimeError("db down")
+        app.state.container = MagicMock()
         with patch("app.api.v1.routes.metrics.get_cost_tracker", return_value=tracker):
-            with TestClient(app) as tc:
-                response = tc.get("/api/v1/metrics/costs/daily")
+            tc = TestClient(app, raise_server_exceptions=False)
+            response = tc.get("/api/v1/metrics/costs/daily")
         assert response.status_code == 500

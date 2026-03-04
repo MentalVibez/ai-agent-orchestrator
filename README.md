@@ -1,32 +1,34 @@
 # AI Agent Orchestrator
 
-A multi-agent backend system that coordinates specialized LLM-powered agents to handle complex IT diagnostics and engineering workflows through a single HTTP API. **Now with MCP (Model Context Protocol)**: register MCP servers, define agent profiles, and run goal-based workflows that compose tools from multiple MCP servers — with native LLM tool calling, RAG, multi-agent messaging, and full observability.
+A production-ready multi-agent backend that coordinates specialized LLM-powered agents for complex IT diagnostics and engineering workflows through a single HTTP API.
 
-> **Production-Ready System**: 7 active agents · 3 LLM providers (Bedrock, OpenAI, Ollama) · Native tool calling (Bedrock Converse API + OpenAI) · RAG via ChromaDB · SQLite/PostgreSQL persistence · Docker deployment · 371 tests passing.
+**MCP-native** — register MCP servers, define agent profiles, and run goal-based workflows that compose tools across multiple servers with native LLM tool calling, RAG, multi-agent messaging, and full observability.
+
+> **1072 tests · 86% coverage · Kubernetes-ready · Supply-chain signed · Zero-downtime deploys**
 
 ---
 
 ## Quick Start (Docker — recommended)
 
 ```bash
-# 1. Clone the repo
 git clone https://github.com/MentalVibez/ai-agent-orchestrator
 cd ai-agent-orchestrator
-
-# 2. Run the interactive setup wizard
 bash scripts/setup.sh
 ```
 
-The wizard will:
-- Ask which LLM provider to use (Bedrock / OpenAI / Ollama)
-- Collect credentials and generate a random API key
-- Write `.env` and start the Docker stack automatically
+The setup wizard collects your LLM credentials, generates a strong API key, and starts the full stack automatically.
 
 Once running:
-- **API:** http://localhost:8000
-- **Health:** http://localhost:8000/api/v1/health
-- **Console:** http://localhost:8000/console
-- **Docs (dev only):** http://localhost:8000/docs *(only when `DEBUG=true`)*
+
+| Service | URL |
+|---------|-----|
+| API | http://localhost:8000 |
+| Health | http://localhost:8000/api/v1/health |
+| Grafana dashboards | http://localhost:3000 (admin/admin) |
+| Prometheus | http://localhost:9090 |
+| Alertmanager | http://localhost:9093 |
+| Jaeger traces | http://localhost:16686 |
+| Swagger UI (dev only) | http://localhost:8000/docs *(DEBUG=true only)* |
 
 ---
 
@@ -47,13 +49,14 @@ Once running:
 
 ## OpenDEX Platform
 
-**OpenDEX** is an independent, open-source Digital Employee Experience (DEX) platform — not affiliated with any commercial DEX vendor. It combines **osquery + Prometheus/Grafana + Ansible + this orchestrator** to deliver enterprise-grade endpoint visibility and automated remediation at zero licensing cost. See **[DEX_MVP.md](DEX_MVP.md)**. To run the orchestrator with Prometheus and Grafana in one go: **[OpenDEX_QUICKSTART.md](OpenDEX_QUICKSTART.md)**.
+**OpenDEX** is an independent, open-source Digital Employee Experience platform — not affiliated with any commercial DEX vendor. It combines **osquery + Prometheus/Grafana + Ansible + this orchestrator** to deliver enterprise-grade endpoint visibility and automated remediation at zero licensing cost. See **[DEX_MVP.md](DEX_MVP.md)** and **[OpenDEX_QUICKSTART.md](OpenDEX_QUICKSTART.md)**.
 
 - **Osquery agent** — endpoint visibility (processes, ports, users, system info)
 - **Ansible agent** — run playbooks for automated remediation
-- **Prometheus metrics** — `GET /metrics` (auth required)
-- **Alertmanager webhook** — `POST /api/v1/webhooks/prometheus`
-- **Example workflow** — diagnose → remediate
+- **DEX scoring** — Device Health (40%) + Network Quality (30%) + App Performance (20%) + Remediation Rate (10%)
+- **Predictive analysis** — anomaly detection with automated alert creation
+- **Self-healing** — set `DEX_SELF_HEALING_ENABLED=true` to auto-trigger Ansible playbooks from alerts
+- **Prometheus + Grafana** — pre-wired and auto-provisioned in `docker-compose.yml`
 
 ---
 
@@ -72,6 +75,7 @@ Once running:
 | Agent Message Bus | `app/core/agent_bus.py` | asyncio.Queue peer-to-peer messaging |
 | Agent Memory | `app/core/agent_memory.py` | DB-backed session state per agent/run |
 | Cost Tracker | `app/core/cost_tracker.py` | Token usage analytics, persisted to DB |
+| Circuit Breaker | `app/core/circuit_breaker.py` | Fast-fail on sustained LLM provider failures |
 
 ### Agents (7 active)
 
@@ -97,18 +101,17 @@ Set `LLM_PROVIDER=bedrock`, `openai`, or `ollama` in `.env`.
 
 > **Native tool calling**: Bedrock uses the Converse API with `toolConfig`; OpenAI uses the `tools` parameter. Both map MCP tool schemas automatically via `app/llm/tool_schema.py`. Ollama falls back to JSON text parsing.
 
-### MCP-Centric Runs
+---
+
+## MCP-Centric Runs
 
 - **Agent Profiles** — defined in `config/agent_profiles.yaml` (role prompt + allowed MCP servers)
 - **Planner Loop** — LLM picks tools iteratively until FINISH. Falls back to legacy orchestrator if no MCP tools are configured.
 - **Checkpointing** — `checkpoint_step_index` saved to DB after each tool call. If the planner crashes mid-run, `resume_planner_loop` skips already-completed steps.
-- **Runs API** — `POST /api/v1/run` → returns `run_id`. Poll `GET /api/v1/runs/{run_id}` for status, steps, and final answer; or stream progress via `GET /api/v1/runs/{run_id}/stream` (SSE).
+- **Idempotency** — include `Idempotency-Key: <uuid>` header on `POST /run` to prevent duplicate runs on retries.
+- **Human-in-the-loop (HITL)** — set `approval_required_tools: [tool_name]` in a profile; run pauses at `awaiting_approval` status. Resume with `POST /api/v1/runs/{run_id}/approve`.
 
-See **[docs/ORCHESTRATION.md](docs/ORCHESTRATION.md)** for when to use `POST /run` vs `POST /orchestrate`, when the planner falls back to legacy agents, and what `agent_profile_id` controls.
-
-**Run queue (optional):** Set `RUN_QUEUE_URL=redis://localhost:6379` to enqueue runs instead of running the planner in-process. Then start a worker with: `RUN_QUEUE_URL=redis://localhost:6379 arq app.worker.WorkerSettings`. Requires `pip install arq`. SSE (`GET /runs/{id}/stream`) still works because events are stored in the DB.
-
-**Human-in-the-loop (HITL):** In `config/agent_profiles.yaml`, set `approval_required_tools: [tool_name, ...]` on a profile. When the planner is about to run one of those tools, the run status becomes `awaiting_approval`. Send `POST /api/v1/runs/{run_id}/approve` with `{"approved": true}` and optionally `modified_arguments: {...}` to override arguments. After approval, the tool runs and the planner resumes.
+See **[docs/ORCHESTRATION.md](docs/ORCHESTRATION.md)** for when to use `POST /run` vs `POST /orchestrate`.
 
 ### MCP Transport Support
 
@@ -117,68 +120,15 @@ Both **stdio** and **HTTP SSE** transports are supported:
 ```yaml
 # config/mcp_servers.yaml
 mcp_servers:
-  my_local_server:
+  fetch:
     transport: stdio
-    command: npx
-    args: ["-y", "@my/mcp-server"]
+    command: uvx            # Python-based (uv installed in Docker)
+    args: ["mcp-server-fetch"]
 
   my_http_server:
     transport: sse
     url: http://localhost:8001/sse
     name: My HTTP MCP Server
-```
-
----
-
-## RAG (Retrieval-Augmented Generation)
-
-Built-in semantic search powered by ChromaDB. Install the optional dependency with:
-
-```bash
-pip install chromadb>=0.4
-```
-
-If ChromaDB is not installed, RAG endpoints return `503 Service Unavailable` — the rest of the API is unaffected.
-
-### RAG API
-
-```http
-# Index a document
-POST /api/v1/rag/index
-{
-  "collection": "my_docs",
-  "document_id": "doc-001",
-  "text": "The nginx service is configured on port 443...",
-  "metadata": {"source": "runbook", "team": "ops"}
-}
-
-# Semantic search
-POST /api/v1/rag/search
-{
-  "collection": "my_docs",
-  "query": "nginx configuration",
-  "n_results": 5
-}
-
-# Delete a collection
-DELETE /api/v1/rag/collection/{collection_name}
-
-# List all collections
-GET /api/v1/collections
-```
-
----
-
-## Multi-Agent Communication
-
-Agents can send and receive messages via an in-process asyncio.Queue message bus:
-
-```python
-# From within any agent subclass:
-await self.send_to_agent("target_agent_id", {"action": "diagnose", "host": "10.0.0.1"})
-
-# In the target agent:
-msg = await self.receive_from_agent(timeout=5.0)
 ```
 
 ---
@@ -194,33 +144,49 @@ msg = await self.receive_from_agent(timeout=5.0)
 
 ### Environment Variables
 
-Key variables (see `.env.example` for full list):
+Key variables (see `.env.example` for full list, `.env.production.example` for production template):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_PROVIDER` | `bedrock` | `bedrock` / `openai` / `ollama` |
-| `API_KEY` | *(required)* | Must be set — auth fails if empty with `REQUIRE_API_KEY=true` |
-| `REQUIRE_API_KEY` | `true` | Set to `false` to disable auth (dev only) |
+| `API_KEY` | *(required)* | Bootstrap admin key — rotate every 90 days |
+| `REQUIRE_API_KEY` | `true` | Set `false` for dev only |
+| `METRICS_TOKEN` | | Separate bearer token for Prometheus `/metrics` scrape |
+| `WEBHOOK_SECRET` | | HMAC-SHA256 secret for Alertmanager webhook |
 | `AWS_REGION` | `us-east-1` | Bedrock region |
-| `AWS_ACCESS_KEY_ID` | | Bedrock credentials |
-| `AWS_SECRET_ACCESS_KEY` | | Bedrock credentials |
-| `OPENAI_API_KEY` | | OpenAI API key |
-| `OPENAI_MODEL` | `gpt-4o` | OpenAI model |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
-| `OLLAMA_MODEL` | `llama3.2` | Ollama model name |
-| `DEBUG` | `false` | Enables Swagger UI (`/docs`) and verbose errors |
-| `DATABASE_URL` | `sqlite:////app/data/orchestrator.db` | SQLite (default) or PostgreSQL URL |
+| `DATABASE_URL` | `sqlite:////app/data/orchestrator.db` | SQLite (default) or PostgreSQL |
 | `CORS_ORIGINS` | `https://yourdomain.com,...` | Comma-separated allowed origins |
-| `WEBHOOK_SECRET` | | HMAC secret for Prometheus webhook (leave blank = unauthenticated) |
-| `USE_LLM_ROUTING` | `false` | If `true`, `POST /orchestrate` uses LLM to pick agent |
-| `RUN_QUEUE_URL` | *(empty)* | Redis URL for async run queue; start worker with `arq app.worker.WorkerSettings` |
-| `OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing (GenAI semantic conventions) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | *(empty)* | OTLP endpoint (e.g. `http://localhost:4318/v1/traces`) |
+| `OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | | OTLP endpoint (Jaeger, Tempo, etc.) |
+| `RUN_QUEUE_URL` | | Redis URL for async run queue |
+| `CIRCUIT_BREAKER_FAIL_MAX` | `5` | Failures before circuit opens |
+| `GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS` | `30` | Drain time on SIGTERM |
+| `LOG_FORMAT` | | `json` for structured logging (recommended in production) |
 
-### Database (SQLite and PostgreSQL)
+### RBAC — Named API Keys
 
-- **SQLite** (default): single-file DB; fine for local dev and single-instance. Set `DATABASE_URL=sqlite:///./orchestrator.db` for a file in the project folder. The app creates tables on startup via `init_db()`.
-- **PostgreSQL**: supported for production and multi-instance. Set `DATABASE_URL=postgresql://user:pass@host:5432/dbname`. Create tables with **Alembic**: run `alembic upgrade head` before starting the app. Migrations live in `alembic/versions/`.
+Beyond the bootstrap `API_KEY`, create per-consumer named keys with roles:
+
+```bash
+# Create an operator key for your CI pipeline
+curl -X POST https://api.yourdomain.com/api/v1/admin/keys \
+  -H "X-API-Key: $ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "ci-pipeline", "role": "operator"}'
+
+# Response includes raw_key — shown once only; store in your secrets manager
+```
+
+| Role | Permissions |
+|------|-------------|
+| `viewer` | Read-only: GET /runs, GET /agents, health |
+| `operator` | viewer + start/cancel runs, approve HITL |
+| `admin` | operator + create/revoke API keys |
+
+### Database
+
+- **SQLite** — single-file DB; fine for local dev. Set `DATABASE_URL=sqlite:///./orchestrator.db`.
+- **PostgreSQL** — required for production and multi-instance. Run `alembic upgrade head` before starting the app. Migrations live in `alembic/versions/`.
 
 ---
 
@@ -236,6 +202,21 @@ GET /api/v1/health
 
 Returns `healthy` / `degraded` / `unhealthy` with agent count, DB status, and LLM status.
 
+### MCP Goal-Based Run (recommended)
+
+```http
+POST /api/v1/run
+Idempotency-Key: <uuid>          (optional — prevents duplicate runs on retry)
+Content-Type: application/json
+
+{
+  "goal": "Check connectivity to example.com on port 443",
+  "agent_profile_id": "default"
+}
+```
+
+Returns `{ "run_id": "..." }`. Then poll `GET /api/v1/runs/{run_id}` or stream with `GET /api/v1/runs/{run_id}/stream` (SSE).
+
 ### Orchestrate (legacy)
 
 ```http
@@ -248,69 +229,32 @@ Content-Type: application/json
 }
 ```
 
-### MCP Goal-Based Run (recommended)
-
-```http
-POST /api/v1/run
-Content-Type: application/json
-
-{
-  "goal": "Check connectivity to example.com on port 443",
-  "agent_profile_id": "default"
-}
-```
-
-Returns `{ "run_id": "..." }`. Then poll:
-
-```http
-GET /api/v1/runs/{run_id}
-```
-
-Returns status, steps, tool calls, and `answer` when complete.
-
-**Stream run progress (SSE)**
-
-```http
-GET /api/v1/runs/{run_id}/stream
-```
-
-Server-Sent Events stream: `status`, `step`, `answer`, `token` (when `stream_tokens: true`), and `end` when the run finishes.
-
 ### Full Endpoint Reference
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/v1/health` | Health check (DB, agents, LLM status) |
-| `POST /api/v1/run` | Start a goal-based MCP run |
-| `GET /api/v1/runs` | List runs (filter by status) |
-| `GET /api/v1/runs/{run_id}` | Get run status, steps, answer |
-| `GET /api/v1/runs/{run_id}/stream` | SSE stream of run progress |
-| `POST /api/v1/runs/{run_id}/approve` | HITL: approve/reject pending tool call |
-| `DELETE /api/v1/runs/{run_id}` | Cancel a run |
-| `POST /api/v1/orchestrate` | Legacy multi-agent orchestration |
-| `GET /api/v1/agents` | List all agents |
-| `GET /api/v1/agents/{id}` | Agent details |
-| `POST /api/v1/workflows` | Execute a YAML workflow |
-| `GET /api/v1/metrics/costs` | LLM cost analytics |
-| `GET /api/v1/agent-profiles` | List MCP agent profiles |
-| `GET /api/v1/mcp/servers` | List connected MCP servers |
-| `POST /api/v1/rag/index` | Index a document into ChromaDB |
-| `POST /api/v1/rag/search` | Semantic search over a collection |
-| `DELETE /api/v1/rag/collection/{name}` | Delete a ChromaDB collection |
-| `GET /api/v1/rag/collections` | List all collections |
-| `POST /api/v1/webhooks/prometheus` | Alertmanager webhook |
-| `GET /metrics` | Prometheus scrape endpoint (auth required) |
-
-**Prometheus scrape config** — add `X-API-Key` header to your Prometheus job:
-```yaml
-scrape_configs:
-  - job_name: orchestrator
-    static_configs:
-      - targets: ["localhost:8000"]
-    authorization:
-      type: Bearer
-      credentials_file: /etc/prometheus/api_key
-```
+| Endpoint | Role required | Description |
+|----------|--------------|-------------|
+| `GET /api/v1/health` | — | Health check (DB, agents, LLM status) |
+| `POST /api/v1/run` | operator | Start a goal-based MCP run |
+| `GET /api/v1/runs` | viewer | List runs (filter by status) |
+| `GET /api/v1/runs/{run_id}` | viewer | Get run status, steps, answer |
+| `GET /api/v1/runs/{run_id}/stream` | viewer | SSE stream of run progress |
+| `POST /api/v1/runs/{run_id}/approve` | operator | HITL: approve/reject pending tool call |
+| `DELETE /api/v1/runs/{run_id}` | operator | Cancel a run |
+| `POST /api/v1/orchestrate` | operator | Legacy multi-agent orchestration |
+| `GET /api/v1/agents` | viewer | List all agents |
+| `GET /api/v1/agent-profiles` | viewer | List MCP agent profiles |
+| `GET /api/v1/mcp/servers` | viewer | List connected MCP servers |
+| `POST /api/v1/workflows` | operator | Execute a YAML workflow |
+| `GET /api/v1/metrics/costs` | viewer | LLM cost analytics |
+| `POST /api/v1/rag/index` | operator | Index a document into ChromaDB |
+| `POST /api/v1/rag/search` | viewer | Semantic search over a collection |
+| `GET /api/v1/rag/collections` | viewer | List all collections |
+| `DELETE /api/v1/rag/collection/{name}` | admin | Delete a ChromaDB collection |
+| `POST /api/v1/admin/keys` | admin | Create a named API key |
+| `GET /api/v1/admin/keys` | admin | List all API keys |
+| `DELETE /api/v1/admin/keys/{key_id}` | admin | Revoke an API key |
+| `POST /api/v1/webhooks/prometheus` | — | Alertmanager webhook receiver |
+| `GET /metrics` | bearer `METRICS_TOKEN` | Prometheus scrape endpoint |
 
 ---
 
@@ -323,8 +267,8 @@ import requests, time
 
 r = requests.post(
     "http://localhost:8000/api/v1/run",
-    headers={"X-API-Key": "your-api-key"},
-    json={"goal": "Check connectivity to example.com on port 443", "agent_profile_id": "default"},
+    headers={"X-API-Key": "your-api-key", "Idempotency-Key": "run-001"},
+    json={"goal": "Check connectivity to example.com on port 443"},
 )
 run_id = r.json()["run_id"]
 
@@ -366,7 +310,6 @@ results = requests.post(
 ### Conditional workflow (YAML)
 
 ```yaml
-# Workflow with conditional step — remediate only if diagnosis finds an issue
 steps:
   - step_id: diagnose
     name: Diagnose Network
@@ -381,19 +324,105 @@ steps:
     condition: "context.get('is_error') == True"
 ```
 
-### Specific agent (osquery)
+---
 
-```python
-requests.post(
-    "http://localhost:8000/api/v1/orchestrate",
-    headers={"X-API-Key": "your-api-key"},
-    json={
-        "task": "Show running processes",
-        "agent_ids": ["osquery"],
-        "context": {"query_key": "processes"},
-    },
-)
+## Security
+
+Security-audited and hardened for production. Key measures:
+
+- **API key auth** — timing-safe comparison (`hmac.compare_digest`); DB-backed RBAC (viewer/operator/admin roles)
+- **Per-key rate limiting** — each API key gets its own independent bucket; no shared-IP quota starvation
+- **Idempotency keys** — `Idempotency-Key` header on `POST /run` prevents duplicate runs on network retries
+- **Prompt injection filter** — all user-controlled strings sanitized before reaching the LLM
+- **Input validation** — hostname, playbook name, agent ID validated via strict regex
+- **Secrets redaction** — log filter strips API keys from all log output
+- **No shell injection** — all subprocess calls use argument lists, never `shell=True`
+- **Security headers** — `X-Frame-Options: DENY`, `X-Content-Type-Options`, HSTS, CSP
+- **Docker** — multi-stage build (no build tools in production image); non-root `appuser` (UID 1000)
+- **Kubernetes** — Pod Security Standards enforced (`readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, `capabilities: drop ALL`, `seccompProfile: RuntimeDefault`); dedicated ServiceAccount with empty rules
+- **Supply chain** — Docker images signed with **cosign** (keyless OIDC); **SBOM** (SPDX-JSON) attached as cosign attestation on every release
+
+See [SECURITY.md](SECURITY.md) for full details, [docs/SECRET_ROTATION.md](docs/SECRET_ROTATION.md) for rotation procedures.
+
+---
+
+## Observability
+
+### Full Stack (included in `docker-compose.yml`)
+
+| Tool | Port | Purpose |
+|------|------|---------|
+| Prometheus | 9090 | Metrics scraping + alert evaluation |
+| Grafana | 3000 | Pre-provisioned dashboards (auto-configured) |
+| Alertmanager | 9093 | Alert routing — PagerDuty, email, webhook |
+| Jaeger | 16686 | Distributed trace UI |
+
+All services auto-start with `docker-compose up`. Grafana connects to Prometheus automatically via provisioning. Prometheus scrapes the API at `/metrics` using `METRICS_TOKEN`.
+
+### Prometheus Metrics
+
 ```
+http_requests_total             — by endpoint, method, status
+http_request_duration_seconds   — histogram for latency percentiles
+llm_calls_total                 — by provider, status
+llm_cost_total                  — cumulative cost in USD
+llm_tokens_total                — input + output token counts
+planner_steps_total             — by run_id
+rate_limit_exceeded_total       — 429 responses
+```
+
+### SLA Alert Rules (`config/prometheus-alerts.yml`)
+
+| Alert | Condition | Severity |
+|-------|-----------|----------|
+| ServiceDown | `up == 0` for 1m | critical |
+| HighErrorRate | 5xx > 1% for 5m | critical |
+| OrchestrateLatencyHigh | p95 > 5s for 5m | warning |
+| LLMCallFailureSpike | failure rate > 10% for 5m | critical |
+| LLMCostSpike | cost increase > $10/hr | warning (finance team) |
+
+### OpenTelemetry Tracing
+
+When `OTEL_ENABLED=true`, the orchestrator emits traces using the **GenAI semantic conventions** (`gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`). Traces span full run lifecycles, individual planner steps, and MCP tool calls.
+
+Export to Jaeger (included in compose), Grafana Tempo, Honeycomb, or any OTLP backend.
+
+---
+
+## Kubernetes Deployment
+
+Full K8s manifests in `k8s/`:
+
+```bash
+# 1. Create namespace + secrets
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/postgres-secret.yaml   # copied from secret.yaml.example
+kubectl apply -f k8s/secret.yaml            # API_KEY, METRICS_TOKEN, etc.
+
+# 2. Run migrations first
+kubectl apply -f k8s/migration-job.yaml -n ai-agent-orchestrator
+kubectl wait --for=condition=complete job/orchestrator-migration \
+  -n ai-agent-orchestrator --timeout=300s
+
+# 3. Deploy everything else
+kubectl apply -k k8s/
+
+# Or use the deploy script (substitutes image tag, waits for rollout)
+scripts/k8s-deploy.sh v1.2.3
+```
+
+**What's included:**
+
+| Manifest | Purpose |
+|----------|---------|
+| `deployment.yaml` | 3 replicas, rolling update, readiness/liveness probes |
+| `hpa.yaml` | Auto-scales 3→10 replicas on CPU/memory pressure |
+| `pdb.yaml` | minAvailable: 2 — tolerates single-node failures |
+| `networkpolicy.yaml` | Restricts ingress/egress to only what's needed |
+| `ingress.yaml` | NGINX + cert-manager TLS, 20 RPS ingress rate limit |
+| `rbac.yaml` | Dedicated ServiceAccount with empty rules (least privilege) |
+| `postgres.yaml` | StatefulSet with 20Gi PVC |
+| `migration-job.yaml` | Runs `alembic upgrade head` before app rollout |
 
 ---
 
@@ -402,115 +431,115 @@ requests.post(
 ```
 ai-agent-orchestrator/
 ├── app/
-│   ├── main.py                    # FastAPI entry point + lifespan
+│   ├── main.py                    # FastAPI entry point + middleware stack
 │   ├── api/v1/routes/
 │   │   ├── runs.py                # Run lifecycle (create, poll, SSE, approve)
-│   │   ├── rag.py                 # RAG endpoints (index, search, collections)
 │   │   ├── orchestrator.py        # Legacy orchestrate endpoint
 │   │   ├── agents.py              # Agent listing
 │   │   ├── metrics.py             # Cost and metrics APIs
+│   │   ├── api_keys.py            # RBAC key management (admin only)
+│   │   ├── rag.py                 # RAG endpoints
+│   │   ├── dex.py                 # DEX platform endpoints
 │   │   └── webhooks.py            # Prometheus Alertmanager webhook
 │   ├── core/
-│   │   ├── run_store.py           # Async DB wrappers for runs/events
-│   │   ├── persistence.py         # Async DB wrappers for history/state
-│   │   ├── agent_memory.py        # DB-backed agent session memory
-│   │   ├── agent_bus.py           # Multi-agent asyncio.Queue message bus
-│   │   ├── rag_manager.py         # ChromaDB RAG integration
-│   │   ├── cost_tracker.py        # Token cost tracking (persisted to DB)
-│   │   ├── workflow_executor.py   # DAG execution + conditional edges
-│   │   ├── orchestrator.py        # Task routing
-│   │   ├── sandbox.py             # Async tool timeout (asyncio.wait_for)
-│   │   ├── auth.py                # API key auth (timing-safe)
-│   │   ├── config.py              # Settings (pydantic-settings)
-│   │   └── prompt_injection.py    # Input sanitization
-│   ├── planner/loop.py            # MCP planner loop + HITL + checkpointing
-│   ├── mcp/
-│   │   ├── client_manager.py      # stdio + HTTP SSE MCP transport
-│   │   └── config_loader.py       # Agent profile loader
-│   ├── agents/
-│   │   ├── base.py                # BaseAgent (tool use, memory, messaging)
-│   │   └── ...                    # 7 agent implementations
-│   ├── llm/
-│   │   ├── tool_schema.py         # MCP → Bedrock/OpenAI tool schema converter
-│   │   ├── bedrock.py             # Bedrock Converse API + native tool calling
-│   │   ├── openai.py              # OpenAI tools parameter + native tool calling
-│   │   ├── ollama.py              # Ollama (text fallback for tool calls)
-│   │   └── base.py                # Abstract LLMProvider interface
-│   ├── db/
-│   │   ├── models.py              # Run, RunEvent, CostRecordDB, AgentState, ...
-│   │   └── database.py            # SQLAlchemy engine + SessionLocal
-│   ├── observability/
-│   │   └── tracing.py             # OTel tracing + GenAI semantic conventions
-│   ├── models/
-│   │   └── workflow.py            # WorkflowStep (with condition field)
-│   └── worker.py                  # arq worker for Redis run queue
+│   │   ├── auth.py                # API key auth + RBAC
+│   │   ├── api_keys.py            # DB-backed key registry
+│   │   ├── idempotency.py         # Idempotency-Key deduplication
+│   │   ├── rate_limit.py          # Per-key rate limiting
+│   │   ├── circuit_breaker.py     # LLM fast-fail
+│   │   ├── logging_config.py      # Structured JSON logging
+│   │   ├── logging_filters.py     # Secrets redaction
+│   │   ├── dex/                   # DEX scoring, telemetry, self-healing
+│   │   └── ...
+│   ├── planner/loop.py            # MCP planner + HITL + checkpointing
+│   ├── mcp/                       # stdio + HTTP SSE transport
+│   ├── agents/                    # 7 agent implementations
+│   ├── llm/                       # Bedrock, OpenAI, Ollama providers
+│   ├── db/                        # SQLAlchemy models + migrations
+│   └── observability/tracing.py   # OTel GenAI semantic conventions
 ├── config/
 │   ├── agents.yaml
-│   ├── mcp_servers.yaml           # stdio + SSE MCP server definitions
-│   └── agent_profiles.yaml        # Agent profiles (role + allowed tools + HITL)
-├── playbooks/                     # Ansible playbooks
+│   ├── agent_profiles.yaml        # MCP profiles (role + tools + HITL)
+│   ├── mcp_servers.yaml           # stdio + SSE server definitions
+│   ├── llm.yaml                   # LLM provider templates
+│   ├── prometheus.yml             # Prometheus scrape + alert config
+│   ├── prometheus-alerts.yml      # 15 SLA-driven alert rules
+│   ├── alertmanager.yml           # Alert routing (PagerDuty, email, webhook)
+│   └── grafana/                   # Auto-provisioned dashboards
+├── k8s/                           # Kubernetes manifests
+├── docs/
+│   ├── ORCHESTRATION.md
+│   ├── API_VERSIONING.md
+│   ├── DISASTER_RECOVERY.md       # RTO/RPO, 7 recovery runbooks
+│   ├── OPERATIONS.md              # Troubleshooting guide
+│   └── SECRET_ROTATION.md        # 90-day rotation procedures
 ├── scripts/
-│   └── setup.sh                   # Interactive setup wizard
+│   ├── setup.sh                   # Interactive setup wizard
+│   ├── k8s-deploy.sh              # K8s deployment automation
+│   ├── backup.sh                  # PostgreSQL backup (+ S3 upload)
+│   └── restore.sh                 # PostgreSQL restore
 ├── tests/
-│   ├── unit/                      # 350+ unit tests
-│   └── integration/               # 21 integration tests
-├── .env.example                   # Environment template
-├── Dockerfile                     # Node.js 20 + Python 3.11
-├── docker-compose.yml             # With named volume for SQLite persistence
-└── alembic/                       # DB migrations
+│   ├── unit/                      # 1000+ unit tests
+│   ├── integration/               # Integration tests
+│   └── load/locustfile.py         # SLA-enforced Locust load tests
+├── .env.example                   # Dev environment template
+├── .env.production.example        # Production environment template
+├── Dockerfile                     # Multi-stage build (builder + runtime)
+├── docker-compose.yml             # Full stack: API + DB + Prometheus + Grafana + Alertmanager + Jaeger
+├── docker-compose.staging.yml     # Staging variant
+└── alembic/                       # DB migrations (5 versions)
 ```
-
----
-
-## Security
-
-This project has undergone a security audit. Key measures in place:
-
-- **API key auth** — timing-safe comparison (`hmac.compare_digest`); server refuses to start if `REQUIRE_API_KEY=true` but `API_KEY` is not set
-- **Rate limiting** — `slowapi` on all endpoints including `/metrics`
-- **No shell injection** — all subprocess calls use argument lists, never `shell=True`
-- **Input validation** — hostname, service name, playbook name, SQL keyword blocklist all validated via strict regex
-- **Prompt injection filter** — all user-controlled strings sanitized before reaching the LLM
-- **No exception leakage** — raw exception messages never exposed in HTTP responses
-- **Security headers** — `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, HSTS (HTTPS only), CSP
-- **CORS** — narrowed to specific methods (`GET`, `POST`, `DELETE`) and headers (`X-API-Key`, `Content-Type`, `Accept`)
-- **Swagger UI** — disabled in production (`DEBUG=false`)
-- **Docker** — non-root `appuser` (UID 1000)
-
-See [SECURITY.md](SECURITY.md) for full details.
-
----
-
-## Observability
-
-When `OTEL_ENABLED=true`, the orchestrator emits OpenTelemetry traces using the **GenAI semantic conventions**:
-
-| Attribute | Value |
-|-----------|-------|
-| `gen_ai.system` | `anthropic` / `openai` / `ollama` |
-| `gen_ai.request.model` | Model ID (e.g. `anthropic.claude-3-haiku-...`) |
-| `gen_ai.usage.input_tokens` | Input token count |
-| `gen_ai.usage.output_tokens` | Output token count |
-
-Traces cover full run lifecycles (`trace_run`), individual planner steps (`trace_step`), and tool calls (`trace_tool_call`). Export to any OTLP-compatible backend (Jaeger, Grafana Tempo, Honeycomb, etc.) via `OTEL_EXPORTER_OTLP_ENDPOINT`.
 
 ---
 
 ## Testing
 
 ```bash
-# Run full test suite (371 tests)
-python -m pytest tests/ -v --tb=short --no-cov
+# Full test suite (1072 tests)
+python -m pytest tests/ -q
 
-# Run with coverage report
+# With coverage report
 python -m pytest tests/ --cov=app --cov-report=term-missing
 
 # Lint
 python -m ruff check app/ tests/
 
-# Security audit of dependencies
-pip install pip-audit && pip-audit
+# Type checking
+python -m mypy app/
+
+# Security audit
+pip-audit
+
+# Load test (requires running API + locust)
+locust -f tests/load/locustfile.py --host http://localhost:8000 --users 20 --spawn-rate 2 --run-time 60s --headless
 ```
+
+### CI Pipeline
+
+Every push/PR runs:
+1. **Lint** — ruff, mypy (type warnings), bandit (SAST, medium+ severity)
+2. **Security** — pip-audit (hard fail on unresolved CVEs)
+3. **Tests** — pytest matrix (Python 3.11 + 3.12); coverage gates 80% (auth/security), 70% (general)
+4. **Migrations** — `alembic upgrade head` + `downgrade base` smoke test
+5. **Docker build** — smoke-builds the multi-stage image
+
+On merge to `main` or semver tag:
+- **Docker publish** — pushes to GHCR (`ghcr.io/<owner>/ai-agent-orchestrator`)
+- **cosign signing** — keyless OIDC signature attached to image
+- **SBOM** — SPDX-JSON generated by syft, attached as cosign attestation
+
+Nightly:
+- **Load test** — Locust SLA enforcement (p50 < 200ms, p95 < 2s, error rate < 1%); fails CI on SLA breach
+
+---
+
+## Operations
+
+| Document | Contents |
+|----------|---------|
+| [docs/DISASTER_RECOVERY.md](docs/DISASTER_RECOVERY.md) | RTO/RPO targets, 7 recovery runbooks, quarterly DR drill |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | 503 debug, OOM tuning, MCP timeout, DB pool, LLM failover, log queries, kubectl commands |
+| [docs/SECRET_ROTATION.md](docs/SECRET_ROTATION.md) | 90-day rotation procedures for all credentials |
 
 ---
 
@@ -532,14 +561,14 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3.2
 echo "LLM_PROVIDER=ollama" >> .env
 echo "OLLAMA_BASE_URL=http://localhost:11434" >> .env
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+docker-compose up
 ```
 
 ---
 
 ## Current Status
 
-**All features implemented and 371 tests passing.**
+**1072 tests · 86% coverage · Production-ready**
 
 | Area | Status |
 |------|--------|
@@ -548,15 +577,20 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 | MCP transport | ✅ stdio + HTTP SSE |
 | Planner + HITL | ✅ Complete — with crash-safe checkpointing |
 | RAG (ChromaDB) | ✅ Optional — `/api/v1/rag/*` endpoints |
+| DEX Platform | ✅ Endpoint registry, scoring, predictive analysis, self-healing |
 | Multi-agent messaging | ✅ asyncio.Queue message bus |
-| Async DB layer | ✅ All DB calls non-blocking (`asyncio.to_thread`) |
-| Conditional workflows | ✅ Python expression edges on workflow steps |
-| Cost tracking | ✅ In-memory + DB-persisted (`CostRecordDB`) |
-| Agent session memory | ✅ DB-backed per agent/run |
-| OTel observability | ✅ GenAI semantic conventions |
-| Security | ✅ Audited and hardened |
-| Docker + persistence | ✅ Named volume for SQLite |
-| Tests | ✅ 371 passing |
+| RBAC API keys | ✅ DB-backed (viewer/operator/admin) + key rotation |
+| Idempotency | ✅ `Idempotency-Key` header on `POST /run` |
+| Circuit breaker | ✅ LLM fast-fail with configurable thresholds |
+| Observability | ✅ Prometheus + Grafana + Alertmanager + Jaeger — all in docker-compose |
+| OTel tracing | ✅ GenAI semantic conventions |
+| Kubernetes | ✅ HA (3+ replicas), HPA, PDB, network policies, Pod Security Standards, RBAC |
+| Supply chain | ✅ cosign image signing + SBOM (SPDX-JSON) on every release |
+| Load testing | ✅ SLA-enforced Locust — fails CI on p50/p95/p99/error rate breach |
+| Backup / restore | ✅ `scripts/backup.sh` + `scripts/restore.sh` with S3 support |
+| Documentation | ✅ DR runbook, operations guide, secret rotation guide |
+| Security | ✅ Audited — SAST, pip-audit, secrets redaction, PSS, image signing |
+| Tests | ✅ 1072 passing, 86% coverage |
 
 ---
 
@@ -567,7 +601,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 3. Run `pytest` and `ruff check` — all checks must pass
 4. Submit a pull request
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines (including privacy: do not commit paths, usernames, or secrets). See [ADDING_AGENTS.md](ADDING_AGENTS.md) to add new agents.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines. See [ADDING_AGENTS.md](ADDING_AGENTS.md) to add new agents.
 
 ---
 
@@ -575,10 +609,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines (including privacy: d
 
 **Apache License 2.0** — see [LICENSE](LICENSE).
 
-- Free for commercial and personal use
-- Modify and distribute freely
-- Attribution required; document significant changes
-- Explicit patent grant (stronger than MIT)
+Free for commercial and personal use. Modify and distribute freely. Attribution required; document significant changes. Explicit patent grant (stronger than MIT).
 
 ---
 

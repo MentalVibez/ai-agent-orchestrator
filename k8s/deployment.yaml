@@ -30,6 +30,20 @@ spec:
         # The deploy script updates this with: checksum/config: $(kubectl get cm ... -o json | sha256sum)
         checksum/config: "placeholder-updated-by-deploy-script"
     spec:
+      # Use the dedicated service account with minimal permissions
+      serviceAccountName: ai-agent-orchestrator
+      # Explicitly disable token mounting — app does not call the K8s API
+      automountServiceAccountToken: false
+
+      # Pod-level security: enforce non-root, set fsGroup for volume ownership,
+      # enable RuntimeDefault seccomp profile (blocks dangerous syscalls)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
       # Spread pods across nodes — prevents all 3 landing on the same node
       topologySpreadConstraints:
         - maxSkew: 1
@@ -62,6 +76,11 @@ spec:
                 secretKeyRef:
                   name: postgres-credentials
                   key: POSTGRES_USER
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
 
       containers:
         - name: orchestrator
@@ -82,6 +101,15 @@ spec:
                 name: orchestrator-config
             - secretRef:
                 name: orchestrator-secrets
+
+          # Container-level security: drop all Linux capabilities,
+          # prevent privilege escalation, enforce read-only root filesystem.
+          # Writable paths (/tmp, /app/data, /app/logs) are provided via emptyDir volumes.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
 
           resources:
             requests:
@@ -115,13 +143,26 @@ spec:
             # Service endpoint list — avoids sending traffic to an unhealthy pod
             failureThreshold: 1
 
-          # Only mount a volume if RAG/ChromaDB is enabled (CHROMA_PERSIST_DIRECTORY=/app/chroma)
-          # Uncomment this block and the volumes section below if using persistent RAG storage:
-          # volumeMounts:
-          #   - name: chroma-storage
-          #     mountPath: /app/chroma
+          volumeMounts:
+            # Writable scratch space required since root fs is read-only
+            - name: tmp
+              mountPath: /tmp
+            - name: app-data
+              mountPath: /app/data
+            - name: app-logs
+              mountPath: /app/logs
+            # Only mount a volume if RAG/ChromaDB is enabled (CHROMA_PERSIST_DIRECTORY=/app/chroma)
+            # Uncomment this block and the chroma-storage volume below if using persistent RAG:
+            # - name: chroma-storage
+            #   mountPath: /app/chroma
 
-      # volumes:
-      #   - name: chroma-storage
-      #     persistentVolumeClaim:
-      #       claimName: orchestrator-chroma-pvc
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: app-data
+          emptyDir: {}
+        - name: app-logs
+          emptyDir: {}
+        # - name: chroma-storage
+        #   persistentVolumeClaim:
+        #     claimName: orchestrator-chroma-pvc

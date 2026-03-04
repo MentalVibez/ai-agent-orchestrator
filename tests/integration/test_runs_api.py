@@ -135,7 +135,7 @@ class TestRunsAPI:
 
     def test_post_run_in_process_when_queue_disabled(self, client, api_key_disabled):
         """When enqueue_run returns False (queue disabled), planner is run via create_task."""
-        with patch("app.api.v1.routes.runs.run_planner_loop", new_callable=AsyncMock) as mock_planner:
+        with patch("app.api.v1.routes.runs._tracked_planner", new_callable=AsyncMock) as mock_planner:
             with patch("app.api.v1.routes.runs.enqueue_run", new_callable=AsyncMock) as mock_enqueue:
                 mock_enqueue.return_value = False
                 with patch("app.api.v1.routes.runs.asyncio.create_task") as mock_create_task:
@@ -146,7 +146,7 @@ class TestRunsAPI:
         assert response.status_code == 201
         mock_enqueue.assert_called_once()
         mock_create_task.assert_called_once()
-        # run_planner_loop is called once to create the coroutine for create_task,
+        # _tracked_planner is called once to create the coroutine for create_task,
         # but is never directly awaited — the task runner handles execution.
         mock_planner.assert_called_once()
 

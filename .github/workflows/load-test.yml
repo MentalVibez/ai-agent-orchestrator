@@ -36,11 +36,14 @@ jobs:
           sleep 5
           curl -f http://localhost:8000/api/v1/health || (echo "App failed to start" && exit 1)
 
-      - name: Run load test (headless, 60s)
+      - name: Run load test (headless, 60s) with SLA enforcement
         env:
           LOAD_TEST_API_KEY: load-test-key
         run: |
           mkdir -p tests/load/results
+          # --exit-code-on-error 1: exit 1 on HTTP failures
+          # The @events.quitting listener in locustfile.py also sets
+          # environment.process_exit_code = 1 when SLA thresholds are breached.
           locust -f tests/load/locustfile.py \
             --host http://localhost:8000 \
             --users 10 \
@@ -50,10 +53,19 @@ jobs:
             --csv tests/load/results/nightly \
             --exit-code-on-error 1
 
+      - name: Print load test summary
+        if: always()
+        run: |
+          if [ -f tests/load/results/nightly_stats.csv ]; then
+            echo "=== Load Test Summary ==="
+            cat tests/load/results/nightly_stats.csv
+          fi
+
       - name: Upload results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: load-test-results-${{ github.run_number }}
+          # Include date in artifact name so results are preserved historically
+          name: load-test-results-${{ github.run_number }}-${{ github.run_attempt }}
           path: tests/load/results/
-          retention-days: 30
+          retention-days: 90

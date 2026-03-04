@@ -13,7 +13,10 @@ resources:
   # 1. Namespace (must exist before anything else)
   - namespace.yaml
 
-  # 2. Configuration — ConfigMap and Secrets
+  # 2. RBAC — ServiceAccount and Role for the application
+  - rbac.yaml
+
+  # 3. Configuration — ConfigMap and Secrets
   - configmap.yaml
   # NOTE: Do NOT commit a real secrets file. Apply secrets manually:
   #   kubectl apply -f k8s/postgres-secret.yaml -n ai-agent-orchestrator

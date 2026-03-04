@@ -1,0 +1,118 @@
+# Alertmanager configuration for AI Agent Orchestrator
+#
+# Environment variables referenced here must be injected at runtime.
+# When running via docker-compose, set them in your .env file.
+# When running in Kubernetes, use a Secret mounted as env vars.
+#
+# Required variables:
+#   PAGERDUTY_SERVICE_KEY  — PagerDuty Events API v1 integration key (critical alerts)
+#   SMTP_SMARTHOST         — SMTP server host:port (e.g. smtp.gmail.com:587)
+#   SMTP_FROM              — Sender address (e.g. alerts@yourdomain.com)
+#   SMTP_AUTH_USERNAME     — SMTP auth username
+#   SMTP_AUTH_PASSWORD     — SMTP auth password
+#   ALERT_EMAIL_OPS        — Operations team email address
+#   ALERT_EMAIL_FINANCE    — Finance team email address (for cost alerts)
+#   ALERTMANAGER_WEBHOOK_URL — Generic webhook URL (Slack, Teams, OpsGenie, etc.)
+
+global:
+  resolve_timeout: 5m
+
+  # SMTP settings for email notifications
+  smtp_smarthost: "${SMTP_SMARTHOST}"
+  smtp_from: "${SMTP_FROM}"
+  smtp_auth_username: "${SMTP_AUTH_USERNAME}"
+  smtp_auth_password: "${SMTP_AUTH_PASSWORD}"
+  smtp_require_tls: true
+
+# Default route — all alerts pass through here first
+route:
+  group_by: ["alertname", "severity", "team"]
+  group_wait: 30s        # Wait before sending grouped alerts
+  group_interval: 5m     # Wait before sending updated group notifications
+  repeat_interval: 4h    # Re-notify if alert is still firing after 4h
+
+  receiver: "webhook-general"
+
+  routes:
+    # Critical alerts → PagerDuty immediately (short repeat interval for on-call)
+    - matchers:
+        - severity="critical"
+      receiver: pagerduty-critical
+      repeat_interval: 1h
+      continue: true   # Also forward to webhook for Slack/Teams visibility
+
+    # Finance/cost alerts → finance team email
+    - matchers:
+        - team="finance"
+      receiver: email-finance
+      repeat_interval: 8h
+
+    # All warnings and unmatched → general ops webhook + email
+    - matchers:
+        - severity="warning"
+      receiver: webhook-general
+      repeat_interval: 4h
+
+receivers:
+  # ── PagerDuty ─────────────────────────────────────────────────────────────
+  # Used for P0/critical alerts that require immediate on-call response.
+  - name: pagerduty-critical
+    pagerduty_configs:
+      - service_key: "${PAGERDUTY_SERVICE_KEY}"
+        description: "{{ .CommonAnnotations.summary }}"
+        details:
+          firing: "{{ .Alerts.Firing | len }}"
+          runbook: "{{ .CommonAnnotations.runbook_url }}"
+          cluster: ai-agent-orchestrator
+        # Sends a resolve event when alert clears
+        send_resolved: true
+
+  # ── Operations team email ──────────────────────────────────────────────────
+  # Used for P1/warning alerts and general operational notifications.
+  - name: email-ops
+    email_configs:
+      - to: "${ALERT_EMAIL_OPS}"
+        send_resolved: true
+        headers:
+          Subject: "[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }} — AI Agent Orchestrator"
+        html: |
+          <h2>{{ .GroupLabels.alertname }}</h2>
+          <p><strong>Status:</strong> {{ .Status }}</p>
+          <p><strong>Severity:</strong> {{ .CommonLabels.severity }}</p>
+          <p><strong>Summary:</strong> {{ .CommonAnnotations.summary }}</p>
+          <p><strong>Description:</strong> {{ .CommonAnnotations.description }}</p>
+          {{ if .CommonAnnotations.runbook_url }}
+          <p><a href="{{ .CommonAnnotations.runbook_url }}">Runbook →</a></p>
+          {{ end }}
+
+  # ── Finance team email ────────────────────────────────────────────────────
+  # Used exclusively for cost/budget alerts (team=finance label).
+  - name: email-finance
+    email_configs:
+      - to: "${ALERT_EMAIL_FINANCE}"
+        send_resolved: true
+        headers:
+          Subject: "[COST ALERT] {{ .GroupLabels.alertname }} — AI Agent Orchestrator"
+
+  # ── Generic webhook ───────────────────────────────────────────────────────
+  # Catch-all receiver. Works with Slack incoming webhooks, Microsoft Teams,
+  # OpsGenie alert API, or any HTTP endpoint accepting JSON POST.
+  - name: webhook-general
+    webhook_configs:
+      - url: "${ALERTMANAGER_WEBHOOK_URL}"
+        send_resolved: true
+        http_config:
+          # Add a bearer token if your webhook requires auth:
+          # authorization:
+          #   credentials: "${ALERTMANAGER_WEBHOOK_TOKEN}"
+        max_alerts: 10  # Batch at most 10 alerts per webhook call
+
+# Inhibition rules — suppress child alerts when a parent fires to reduce noise
+inhibit_rules:
+  # If the entire service is down (critical), suppress individual warning alerts
+  - source_matchers:
+      - alertname="ServiceDown"
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal: ["namespace"]

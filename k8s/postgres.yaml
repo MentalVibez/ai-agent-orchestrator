@@ -64,11 +64,26 @@ spec:
     spec:
       # Terminate existing connections before shutdown to avoid data corruption
       terminationGracePeriodSeconds: 60
+      automountServiceAccountToken: false
+
+      # Pod-level security: postgres runs as uid 999 (the postgres system user in the alpine image)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
 
       containers:
         - name: postgres
           image: postgres:16-alpine
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              # postgres needs setuid/setgid to manage child processes (pg_ctl, etc.)
+              add: ["SETUID", "SETGID"]
           ports:
             - containerPort: 5432
               name: postgres

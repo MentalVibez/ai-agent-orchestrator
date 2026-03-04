@@ -18,6 +18,7 @@ from app.core.prompt_injection import (
     apply_prompt_injection_filter,
     sanitize_user_input,
 )
+from app.core.cost_tracker import get_cost_tracker
 from app.core.run_store import append_run_event, get_run_by_id, update_run
 from app.mcp.client_manager import get_mcp_client_manager
 from app.mcp.config_loader import get_agent_profile
@@ -114,6 +115,9 @@ async def _run_planner_steps(
     stream_tokens: when True, stream LLM output and emit token events for SSE."""
     if approval_required_tools is None:
         approval_required_tools = []
+    _cost_cap = getattr(settings, "max_cost_per_run_usd", 0.0)
+    _accumulated_cost: float = 0.0
+    _cost_tracker = get_cost_tracker()
     for step in range(start_step, MAX_PLANNER_STEPS + 1):
         run = await get_run_by_id(run_id)
         if run and run.status == "cancelled":
@@ -156,7 +160,16 @@ Respond with exactly one JSON object, no other text. Choose one:
                     return await llm_generate(user_prompt, system)
             return await llm_generate(user_prompt, system)
 
+        # Guard: check accumulated cost before this LLM call
+        if _cost_cap > 0 and _accumulated_cost >= _cost_cap:
+            err = f"Run aborted: estimated LLM cost ${_accumulated_cost:.4f} reached cap ${_cost_cap:.2f}"
+            logger.warning("Cost cap exceeded for run %s: %s", run_id, err)
+            await update_run(run_id, status="failed", error=err, steps=steps, tool_calls=tool_calls_records)
+            await append_run_event(run_id, "status", {"status": "failed", "error": err})
+            return
+
         with trace_step(run_id, step):
+            _prompt_chars = len(system) + len(user_prompt)
             try:
                 if llm_timeout > 0:
                     response = await asyncio.wait_for(
@@ -191,6 +204,14 @@ Respond with exactly one JSON object, no other text. Choose one:
                 )
                 await append_run_event(run_id, "status", {"status": "failed", "error": str(e)})
                 return
+
+            # Accumulate estimated cost (characters / 4 ≈ tokens; best-effort guardrail)
+            if _cost_cap > 0:
+                _input_tokens = _prompt_chars // 4
+                _output_tokens = max(1, len(response) // 4)
+                _accumulated_cost += _cost_tracker.calculate_cost(
+                    settings.llm_provider, settings.llm_model, _input_tokens, _output_tokens
+                )
 
             parsed = _parse_planner_response(response)
             if not parsed:

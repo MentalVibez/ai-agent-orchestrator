@@ -18,7 +18,7 @@ class RunStatus(str, Enum):
 class RunRequest(BaseModel):
     """Request to start a new run."""
 
-    goal: str = Field(..., description="User goal to achieve")
+    goal: str = Field(..., description="User goal to achieve", max_length=10_000)
     agent_profile_id: Optional[str] = Field(
         default="default", description="Agent profile (from agent_profiles.yaml)"
     )

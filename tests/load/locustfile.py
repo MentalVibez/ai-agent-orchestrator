@@ -32,7 +32,71 @@ import os
 import random
 import uuid
 
-from locust import HttpUser, between, task
+from locust import HttpUser, between, events, task
+
+# ── SLA thresholds ─────────────────────────────────────────────────────────────
+# These mirror the targets documented in the module docstring and the Prometheus
+# alert rules in config/prometheus-alerts.yml.  The quitting listener below
+# fails the CI job (exit code 1) if any threshold is breached.
+_SLA = {
+    "p50_read_ms": 200,      # p50 for health / list endpoints
+    "p95_write_ms": 2_000,   # p95 for POST /orchestrate
+    "p99_run_ms": 10_000,    # p99 for POST /run (async — returns immediately)
+    "error_rate_pct": 1.0,   # global 5xx error rate ceiling
+}
+
+
+@events.quitting.add_listener
+def _check_sla(environment, **_kwargs):
+    """Fail the process (exit code 1) when any SLA target is breached.
+
+    This makes the GitHub Actions nightly load-test job fail visibly rather
+    than silently uploading results and passing the workflow.
+    """
+    stats = environment.runner.stats
+    violations: list[str] = []
+
+    # Helper: safe percentile lookup (returns 0 if endpoint not hit)
+    def p(name: str, method: str, pct: float) -> float:
+        entry = stats.get(name, method)
+        if entry is None or entry.num_requests == 0:
+            return 0.0
+        return entry.get_response_time_percentile(pct)
+
+    # p50 for read endpoints
+    for endpoint, method in [
+        ("/api/v1/health", "GET"),
+        ("/api/v1/runs", "GET"),
+        ("/api/v1/agents", "GET"),
+    ]:
+        val = p(endpoint, method, 0.50)
+        if val and val > _SLA["p50_read_ms"]:
+            violations.append(f"p50 {method} {endpoint} = {val:.0f}ms > {_SLA['p50_read_ms']}ms")
+
+    # p95 for POST /orchestrate
+    val = p("/api/v1/orchestrate", "POST", 0.95)
+    if val and val > _SLA["p95_write_ms"]:
+        violations.append(f"p95 POST /orchestrate = {val:.0f}ms > {_SLA['p95_write_ms']}ms")
+
+    # p99 for POST /run
+    val = p("/api/v1/run", "POST", 0.99)
+    if val and val > _SLA["p99_run_ms"]:
+        violations.append(f"p99 POST /run = {val:.0f}ms > {_SLA['p99_run_ms']}ms")
+
+    # Global error rate
+    total = stats.total
+    if total.num_requests > 0:
+        error_rate = 100.0 * total.num_failures / total.num_requests
+        if error_rate > _SLA["error_rate_pct"]:
+            violations.append(f"Error rate = {error_rate:.2f}% > {_SLA['error_rate_pct']}%")
+
+    if violations:
+        print("\n[LOAD TEST] SLA VIOLATIONS DETECTED:")
+        for v in violations:
+            print(f"  ✗ {v}")
+        environment.process_exit_code = 1
+    else:
+        print("\n[LOAD TEST] All SLA targets met.")
 
 API_KEY = os.getenv("LOAD_TEST_API_KEY", "change-me")
 

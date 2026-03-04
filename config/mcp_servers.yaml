@@ -14,11 +14,12 @@ mcp_servers:
   #   enabled: false
 
   # Fetch MCP – HTTP fetch, URL to markdown (Anthropic/modelcontextprotocol)
+  # Requires: uv installed (pip install uv  or  curl -LsSf https://astral.sh/uv/install.sh | sh)
   fetch:
     name: Fetch
     transport: stdio
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-fetch"]
+    command: uvx
+    args: ["mcp-server-fetch"]
     env: {}
     categories: [web, http]
     enabled: true

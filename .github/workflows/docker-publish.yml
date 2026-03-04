@@ -17,7 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write  # Required to push to GHCR
+      packages: write      # Required to push to GHCR
+      id-token: write      # Required for keyless cosign signing (OIDC)
+      attestations: write  # Required to attach SBOM attestation
 
     steps:
       - name: Checkout repository
@@ -53,9 +55,11 @@ jobs:
             org.opencontainers.image.vendor=${{ github.repository_owner }}
 
       - name: Build and push Docker image
+        id: push
         uses: docker/build-push-action@v5
         with:
           context: .
+          target: runtime
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -66,4 +70,46 @@ jobs:
         run: |
           echo "Image pushed successfully:"
           echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n'
-          echo "Digest: ${{ steps.build-push.outputs.digest }}"
+          echo "Digest: ${{ steps.push.outputs.digest }}"
+
+      # ── Supply Chain Security ───────────────────────────────────────────────
+      # Sign the image with cosign using GitHub's OIDC token (keyless signing).
+      # Signatures are stored in the same registry alongside the image.
+      # Verify with: cosign verify --certificate-identity-regexp=github.com/<owner> \
+      #                            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+      #                            ghcr.io/<owner>/ai-agent-orchestrator@<digest>
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image (keyless OIDC)
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+
+      # Generate an SBOM (Software Bill of Materials) in SPDX-JSON format
+      # and attach it to the image as a cosign attestation.
+      # This lets downstream tools audit the exact packages in the image.
+      - name: Generate SBOM with syft
+        uses: anchore/sbom-action@v0
+        with:
+          image: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Attach SBOM attestation to image
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          cosign attest --yes \
+            --predicate sbom.spdx.json \
+            --type spdxjson \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+
+      - name: Upload SBOM as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.spdx.json
+          retention-days: 90

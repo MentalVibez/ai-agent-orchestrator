@@ -27,10 +27,15 @@ spec:
         component: migration
     spec:
       restartPolicy: Never
-      # Run as the same non-root user as the app container
+      automountServiceAccountToken: false
+
+      # Pod-level security standards
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
 
       initContainers:
         # Wait for PostgreSQL to be accepting connections before running migrations.
@@ -52,6 +57,11 @@ spec:
                 secretKeyRef:
                   name: postgres-credentials
                   key: POSTGRES_USER
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
 
       containers:
         - name: alembic-migrate
@@ -66,6 +76,11 @@ spec:
           envFrom:
             - secretRef:
                 name: orchestrator-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           resources:
             requests:
               memory: "128Mi"
@@ -73,3 +88,10 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "500m"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}

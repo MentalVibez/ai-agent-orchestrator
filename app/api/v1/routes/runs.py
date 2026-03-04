@@ -4,6 +4,26 @@ import asyncio
 import json
 from typing import Optional
 
+# Guard: in-memory active-run counter per API key (resets on restart; sufficient for a rate guardrail).
+_active_runs: dict[str, int] = {}
+_active_runs_lock: asyncio.Lock | None = None
+
+
+def _get_active_runs_lock() -> asyncio.Lock:
+    global _active_runs_lock
+    if _active_runs_lock is None:
+        _active_runs_lock = asyncio.Lock()
+    return _active_runs_lock
+
+
+async def _tracked_planner(api_key_id: str, **kwargs) -> None:
+    """Wrap run_planner_loop to decrement the active-run counter when the run finishes."""
+    try:
+        await run_planner_loop(**kwargs)
+    finally:
+        async with _get_active_runs_lock():
+            _active_runs[api_key_id] = max(0, _active_runs.get(api_key_id, 1) - 1)
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
@@ -77,6 +97,18 @@ async def start_run(
                     message="Duplicate request — returning existing run.",
                 )
 
+    # Guard: max concurrent runs per API key
+    api_key_id = getattr(request.state, "api_key_id", "anon")
+    if settings.max_concurrent_runs_per_key > 0:
+        async with _get_active_runs_lock():
+            active = _active_runs.get(api_key_id, 0)
+            if active >= settings.max_concurrent_runs_per_key:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Too many concurrent runs ({active}). Wait for existing runs to finish.",
+                )
+            _active_runs[api_key_id] = active + 1
+
     goal = validate_goal(body.goal)
     context = validate_run_context(body.context)
     if body.stream_tokens:
@@ -106,7 +138,8 @@ async def start_run(
         req_id = getattr(request.state, "request_id", None)
         llm_manager = request.app.state.container.get_llm_manager()
         asyncio.create_task(
-            run_planner_loop(
+            _tracked_planner(
+                api_key_id=api_key_id,
                 run_id=run.run_id,
                 goal=goal,
                 agent_profile_id=profile_id,
@@ -115,6 +148,10 @@ async def start_run(
                 llm_manager=llm_manager,
             )
         )
+    else:
+        # Run is enqueued to worker — decrement counter immediately since worker tracks separately
+        async with _get_active_runs_lock():
+            _active_runs[api_key_id] = max(0, _active_runs.get(api_key_id, 1) - 1)
     return RunResponse(
         run_id=run.run_id,
         status=RunStatus(run.status),

@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     planner_tool_timeout_seconds: int = Field(default=60, alias="PLANNER_TOOL_TIMEOUT_SECONDS")
     # Maximum concurrent webhook-triggered runs before returning HTTP 429.
     webhook_max_concurrent_runs: int = Field(default=5, alias="WEBHOOK_MAX_CONCURRENT_RUNS")
+    # Guard rails
+    # Maximum concurrent in-progress runs per API key (0 = unlimited).
+    max_concurrent_runs_per_key: int = Field(default=10, alias="MAX_CONCURRENT_RUNS_PER_KEY")
+    # Maximum estimated LLM spend per single run in USD (0 = unlimited).
+    max_cost_per_run_usd: float = Field(default=5.0, alias="MAX_COST_PER_RUN_USD")
     # Webhook alert deduplication window in seconds.
     webhook_dedup_ttl_seconds: int = Field(default=300, alias="WEBHOOK_DEDUP_TTL_SECONDS")
     # Use LLM to route POST /orchestrate tasks to an agent (when True). Fallback to keyword routing on failure.

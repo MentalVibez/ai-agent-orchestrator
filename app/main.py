@@ -15,7 +15,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.v1.routes import agents, api_keys, metrics, orchestrator, runs, webhooks
 from app.api.v1.routes import dex as dex_routes
 from app.api.v1.routes import rag as rag_routes
-from app.integrations import slack as slack_integration
 from app.core.auth import verify_metrics_token
 from app.core.config import settings
 from app.core.exceptions import (
@@ -28,6 +27,7 @@ from app.core.exceptions import (
 from app.core.logging_config import configure_logging
 from app.core.rate_limit import RateLimitExceeded, _rate_limit_exceeded_handler, limiter
 from app.core.services import get_service_container
+from app.integrations import slack as slack_integration
 from app.middleware.graceful_shutdown import GracefulShutdownMiddleware
 from app.middleware.request_id import RequestIDMiddleware
 from app.models.request import HealthResponse

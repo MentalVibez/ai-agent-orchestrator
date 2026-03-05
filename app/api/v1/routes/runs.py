@@ -4,6 +4,31 @@ import asyncio
 import json
 from typing import Optional
 
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
+
+from app.core.auth import verify_api_key
+from app.core.config import settings
+from app.core.rate_limit import limiter
+from app.core.run_queue import enqueue_run
+from app.core.run_store import create_run, get_run_by_id, get_run_events, list_runs
+from app.core.run_templates import get_run_template, list_run_templates, render_template_goal
+from app.core.validation import validate_agent_profile_id, validate_goal, validate_run_context
+from app.mcp.config_loader import get_enabled_agent_profiles, load_mcp_servers_config
+from app.models.run import (
+    ApproveRunRequest,
+    RunDetailResponse,
+    RunRequest,
+    RunResponse,
+    RunStatus,
+    RunTemplateRequest,
+)
+from app.planner.loop import (
+    execute_approved_tool_and_update_run,
+    resume_planner_loop,
+    run_planner_loop,
+)
+
 # Guard: in-memory active-run counter per API key (resets on restart; sufficient for a rate guardrail).
 _active_runs: dict[str, int] = {}
 _active_runs_lock: asyncio.Lock | None = None
@@ -23,24 +48,6 @@ async def _tracked_planner(api_key_id: str, **kwargs) -> None:
     finally:
         async with _get_active_runs_lock():
             _active_runs[api_key_id] = max(0, _active_runs.get(api_key_id, 1) - 1)
-
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
-
-from app.core.auth import verify_api_key
-from app.core.config import settings
-from app.core.rate_limit import limiter
-from app.core.run_queue import enqueue_run
-from app.core.run_store import create_run, get_run_by_id, get_run_events, list_runs
-from app.core.run_templates import get_run_template, list_run_templates, render_template_goal
-from app.core.validation import validate_agent_profile_id, validate_goal, validate_run_context
-from app.mcp.config_loader import get_enabled_agent_profiles, load_mcp_servers_config
-from app.models.run import ApproveRunRequest, RunDetailResponse, RunRequest, RunResponse, RunStatus, RunTemplateRequest
-from app.planner.loop import (
-    execute_approved_tool_and_update_run,
-    resume_planner_loop,
-    run_planner_loop,
-)
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
 

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.core.config import settings
+from app.core.cost_tracker import get_cost_tracker
 from app.core.prompt_injection import (
     STRUCTURAL_INSTRUCTION,
     USER_GOAL_END,
@@ -18,7 +19,6 @@ from app.core.prompt_injection import (
     apply_prompt_injection_filter,
     sanitize_user_input,
 )
-from app.core.cost_tracker import get_cost_tracker
 from app.core.run_store import append_run_event, get_run_by_id, update_run
 from app.mcp.client_manager import get_mcp_client_manager
 from app.mcp.config_loader import get_agent_profile

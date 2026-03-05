@@ -72,6 +72,14 @@ jobs:
           echo "${{ steps.meta.outputs.tags }}" | tr ',' '\n'
           echo "Digest: ${{ steps.push.outputs.digest }}"
 
+      # GHCR requires lowercase repository names; ${{ github.repository }} preserves
+      # the original case (e.g. MentalVibez/...) which cosign/syft reject.
+      - name: Compute lowercase image reference
+        id: image_ref
+        run: |
+          ref="${{ env.REGISTRY }}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+
       # ── Supply Chain Security ───────────────────────────────────────────────
       # Sign the image with cosign using GitHub's OIDC token (keyless signing).
       # Signatures are stored in the same registry alongside the image.
@@ -86,7 +94,7 @@ jobs:
           COSIGN_EXPERIMENTAL: "true"
         run: |
           cosign sign --yes \
-            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+            "${{ steps.image_ref.outputs.ref }}@${{ steps.push.outputs.digest }}"
 
       # Generate an SBOM (Software Bill of Materials) in SPDX-JSON format
       # and attach it to the image as a cosign attestation.
@@ -94,7 +102,7 @@ jobs:
       - name: Generate SBOM with syft
         uses: anchore/sbom-action@v0
         with:
-          image: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+          image: "${{ steps.image_ref.outputs.ref }}@${{ steps.push.outputs.digest }}"
           format: spdx-json
           output-file: sbom.spdx.json
 
@@ -105,7 +113,7 @@ jobs:
           cosign attest --yes \
             --predicate sbom.spdx.json \
             --type spdxjson \
-            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+            "${{ steps.image_ref.outputs.ref }}@${{ steps.push.outputs.digest }}"
 
       - name: Upload SBOM as workflow artifact
         uses: actions/upload-artifact@v4
@@ -130,6 +138,6 @@ jobs:
       - name: Generate SLSA Level 2 provenance attestation
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-name: ${{ steps.image_ref.outputs.ref }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true

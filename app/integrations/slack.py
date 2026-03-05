@@ -30,7 +30,7 @@ import hashlib
 import hmac
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response

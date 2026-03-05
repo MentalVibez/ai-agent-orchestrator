@@ -414,6 +414,8 @@ async def start_run_from_template(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    goal = validate_goal(goal)
+
     # Guard: max concurrent runs per API key (same as POST /run)
     api_key_id = getattr(request.state, "api_key_id", "anon")
     if settings.max_concurrent_runs_per_key > 0:

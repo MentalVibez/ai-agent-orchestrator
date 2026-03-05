@@ -1,13 +1,11 @@
 """Unit tests for app/mcp/server.py MCP tool functions."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 # Import the module-level tool functions directly (not via mcp framework)
 import app.mcp.server as mcp_server_module
-
 
 # ---------------------------------------------------------------------------
 # Helpers

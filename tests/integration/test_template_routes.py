@@ -1,14 +1,12 @@
 """Integration tests for run template routes (GET /run/templates, POST /run/template/{name})."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-
-from unittest.mock import MagicMock
 
 from app.core.config import settings
 from app.db.database import init_db

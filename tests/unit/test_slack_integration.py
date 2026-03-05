@@ -3,7 +3,7 @@
 import hashlib
 import hmac
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,7 +12,6 @@ from app.integrations.slack import (
     _parse_command,
     _verify_slack_signature,
 )
-
 
 # ---------------------------------------------------------------------------
 # _verify_slack_signature
@@ -136,6 +135,7 @@ def _make_slack_body(text: str = "Check disk on prod-01", command: str = "/orche
 def slack_client():
     """TestClient with Slack signing secret disabled (dev mode)."""
     from fastapi import FastAPI
+
     from app.integrations.slack import router
 
     app = FastAPI()
@@ -245,6 +245,7 @@ class TestSlackEventsEndpoint:
 @pytest.fixture()
 def teams_client():
     from fastapi import FastAPI
+
     from app.integrations.slack import router
 
     app = FastAPI()

@@ -18,7 +18,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.db.models import ApiKeyRecord
+from app.db.models import ApiKeyRecord, CostRecordDB
 
 # Roles ordered from lowest to highest privilege
 ROLE_ORDER = {"viewer": 0, "operator": 1, "admin": 2}
@@ -46,7 +46,12 @@ def generate_api_key() -> tuple[str, str]:
     return key_id, raw_key
 
 
-def create_api_key(db: Session, name: str, role: str = "operator") -> tuple[str, str, ApiKeyRecord]:
+def create_api_key(
+    db: Session,
+    name: str,
+    role: str = "operator",
+    max_monthly_cost_usd: Optional[float] = None,
+) -> tuple[str, str, ApiKeyRecord]:
     """Create and persist a new API key.
 
     Returns (key_id, raw_key, record). Caller must show raw_key to user; it is
@@ -61,6 +66,7 @@ def create_api_key(db: Session, name: str, role: str = "operator") -> tuple[str,
         name=name,
         role=role,
         is_active=True,
+        max_monthly_cost_usd=max_monthly_cost_usd,
     )
     db.add(record)
     db.commit()
@@ -106,3 +112,19 @@ def revoke_api_key(db: Session, key_id: str) -> Optional[ApiKeyRecord]:
 def has_role(record: ApiKeyRecord, required_role: str) -> bool:
     """Return True if record's role meets or exceeds required_role."""
     return ROLE_ORDER.get(record.role, -1) >= ROLE_ORDER.get(required_role, 999)
+
+
+def get_monthly_spend_for_key(db: Session, key_id: str, year: int, month: int) -> float:
+    """Return total LLM cost_usd for key_id in the given calendar month."""
+    from sqlalchemy import extract
+
+    result = (
+        db.query(CostRecordDB)
+        .filter(
+            CostRecordDB.api_key_id == key_id,
+            extract("year", CostRecordDB.timestamp) == year,
+            extract("month", CostRecordDB.timestamp) == month,
+        )
+        .all()
+    )
+    return sum(r.cost_usd for r in result)

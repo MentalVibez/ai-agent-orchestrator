@@ -21,6 +21,7 @@ class CostRecord:
     agent_id: Optional[str] = None
     endpoint: Optional[str] = None
     request_id: Optional[str] = None
+    api_key_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -91,6 +92,7 @@ class CostTracker:
         agent_id: Optional[str] = None,
         endpoint: Optional[str] = None,
         request_id: Optional[str] = None,
+        api_key_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> CostRecord:
         """
@@ -123,6 +125,7 @@ class CostTracker:
             agent_id=agent_id,
             endpoint=endpoint,
             request_id=request_id,
+            api_key_id=api_key_id,
             metadata=metadata or {},
         )
 
@@ -155,6 +158,7 @@ class CostTracker:
                                 agent_id=agent_id,
                                 endpoint=endpoint,
                                 request_id=request_id,
+                                api_key_id=api_key_id,
                                 timestamp=record.timestamp,
                             )
                         )

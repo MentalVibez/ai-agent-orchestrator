@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orchestrator-config
+  namespace: {{ include "ai-agent-orchestrator.namespace" . }}
+  labels:
+    {{- include "ai-agent-orchestrator.labels" . | nindent 4 }}
+data:
+  LLM_PROVIDER: {{ .Values.llm.provider | quote }}
+  LLM_MODEL: {{ .Values.llm.model | quote }}
+  {{- if eq .Values.llm.provider "ollama" }}
+  OLLAMA_BASE_URL: {{ .Values.llm.ollamaBaseUrl | quote }}
+  {{- end }}
+  LOG_FORMAT: "json"
+  REQUIRE_API_KEY: "true"
+  DATA_RESIDENCY_ENFORCE_ONPREM_LLM: {{ .Values.compliance.dataResidency.enforceOnPremLLM | quote }}

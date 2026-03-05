@@ -41,6 +41,13 @@ async def verify_api_key(
     Returns the raw key string on success (used by RBAC helpers).
     Raises HTTPException on failure.
     """
+    # OIDC Bearer token path — opt-in, zero overhead when disabled
+    if getattr(settings, "oidc_enabled", False):
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            from app.core.oidc import verify_oidc_token
+            return await verify_oidc_token(request, auth_header[7:])
+
     require_key = getattr(settings, "require_api_key", True)
 
     if not require_key:

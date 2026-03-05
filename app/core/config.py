@@ -117,6 +117,36 @@ class Settings(BaseSettings):
     # When set, unresolvable alerts POST a JSON payload with diagnostic context
     dex_ticket_webhook_url: str = Field(default="", alias="DEX_TICKET_WEBHOOK_URL")
 
+    # OIDC / JWT Resource Server (opt-in — leave OIDC_ENABLED=False to disable)
+    # When enabled, Authorization: Bearer <jwt> is validated before X-API-Key.
+    oidc_enabled: bool = Field(default=False, alias="OIDC_ENABLED")
+    # Issuer URL used to validate the `iss` claim (e.g. https://your-org.okta.com/oauth2/default)
+    oidc_issuer: str = Field(default="", alias="OIDC_ISSUER")
+    # Expected audience in the `aud` claim (e.g. api://your-app-id). Leave empty to skip.
+    oidc_audience: str = Field(default="", alias="OIDC_AUDIENCE")
+    # JWKS endpoint URI (e.g. https://your-org.okta.com/oauth2/default/v1/keys)
+    oidc_jwks_uri: str = Field(default="", alias="OIDC_JWKS_URI")
+    # JWT claim name that holds the user's role(s) — may be a string or list of strings
+    oidc_role_claim: str = Field(default="roles", alias="OIDC_ROLE_CLAIM")
+    # JSON mapping of IdP role value → app role (viewer/operator/admin)
+    # Example: '{"platform-admin": "admin", "dev-team": "operator"}'
+    oidc_role_map: str = Field(default="{}", alias="OIDC_ROLE_MAP")
+    # JWKS cache TTL in seconds (default 86400 = 24 h)
+    oidc_jwks_cache_ttl: int = Field(default=86400, alias="OIDC_JWKS_CACHE_TTL")
+
+    # ── Spend Cap Notifications ───────────────────────────────────────────────
+    # Optional webhook URL (Slack/Teams/generic) that receives a POST when a
+    # per-key monthly budget cap is breached. Leave empty to disable.
+    spend_cap_webhook_url: str = Field(default="", alias="SPEND_CAP_WEBHOOK_URL")
+
+    # ── Data Residency ───────────────────────────────────────────────────────
+    # If True, the app refuses to start when a cloud LLM provider is configured.
+    # Use this flag in HIPAA/SOC2 environments to prevent accidental data egress.
+    data_residency_enforce_onprem_llm: bool = Field(
+        default=False,
+        alias="DATA_RESIDENCY_ENFORCE_ONPREM_LLM",
+    )
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins string into a list."""

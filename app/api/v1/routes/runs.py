@@ -44,12 +44,22 @@ def _get_active_runs_lock() -> asyncio.Lock:
 async def _tracked_planner(api_key_id: str, **kwargs) -> None:
     """Wrap run_planner_loop to decrement the active-run counter when the run finishes."""
     try:
-        await run_planner_loop(**kwargs)
+        await run_planner_loop(api_key_id=api_key_id, **kwargs)
     finally:
         async with _get_active_runs_lock():
             _active_runs[api_key_id] = max(0, _active_runs.get(api_key_id, 1) - 1)
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
+
+
+def _check_run_ownership(request: Request, run) -> None:
+    """Raise HTTP 403 if caller's key doesn't own this run (admins bypass)."""
+    role = getattr(request.state, "api_key_role", None)
+    if role == "admin":
+        return
+    caller_key = getattr(request.state, "api_key_id", None)
+    if run.api_key_id and run.api_key_id != caller_key:
+        raise HTTPException(status_code=403, detail="Access denied: run belongs to a different API key.")
 
 
 @router.post(
@@ -126,6 +136,7 @@ async def start_run(
         goal=goal,
         agent_profile_id=profile_id,
         context=context,
+        api_key_id=api_key_id if api_key_id != "anon" else None,
     )
 
     # Store idempotency mapping after run is persisted
@@ -186,6 +197,7 @@ async def approve_run(
     run = await get_run_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    _check_run_ownership(request, run)
     if run.status != "awaiting_approval":
         return {"run_id": run_id, "status": run.status, "message": "Run is not awaiting approval."}
     from app.core.run_store import update_run as do_update
@@ -226,6 +238,7 @@ async def reject_run(
     run = await get_run_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    _check_run_ownership(request, run)
     if run.status != "awaiting_approval":
         return {"run_id": run_id, "status": run.status, "message": "Run is not awaiting approval."}
     from app.core.run_store import update_run as do_update
@@ -250,6 +263,7 @@ async def cancel_run(
     run = await get_run_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    _check_run_ownership(request, run)
     if run.status in ("completed", "failed", "cancelled"):
         return {"run_id": run_id, "status": run.status, "message": "Run already ended."}
     from app.core.run_store import update_run as do_update
@@ -274,7 +288,10 @@ async def list_runs_route(
     api_key: str = Depends(verify_api_key),
 ) -> dict:
     """List runs with optional status filter."""
-    runs = await list_runs(limit=limit, offset=offset, status=status)
+    role = getattr(request.state, "api_key_role", None)
+    caller_key = getattr(request.state, "api_key_id", None)
+    scope_key = None if role == "admin" else caller_key
+    runs = await list_runs(limit=limit, offset=offset, status=status, api_key_id=scope_key)
     return {
         "runs": [r.to_dict() for r in runs],
         "limit": limit,
@@ -299,6 +316,7 @@ async def stream_run(
     run = await get_run_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    _check_run_ownership(request, run)
 
     async def event_generator():
         last_event_id: Optional[int] = None
@@ -342,6 +360,7 @@ async def get_run(
     run = await get_run_by_id(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found")
+    _check_run_ownership(request, run)
     pending_approval = None
     if run.status == "awaiting_approval":
         pending_approval = getattr(run, "pending_tool_call", None)
@@ -440,7 +459,12 @@ async def start_run_from_template(
         context["_stream_tokens"] = True
 
     profile_id = validate_agent_profile_id(agent_profile_id)
-    run = await create_run(goal=goal, agent_profile_id=profile_id, context=context)
+    run = await create_run(
+        goal=goal,
+        agent_profile_id=profile_id,
+        context=context,
+        api_key_id=api_key_id if api_key_id != "anon" else None,
+    )
 
     enqueued = await enqueue_run(
         run_id=run.run_id,

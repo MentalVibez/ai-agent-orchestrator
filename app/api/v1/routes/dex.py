@@ -591,10 +591,11 @@ async def get_endpoint_runbooks(
 ) -> dict:
     """Search ChromaDB for runbooks relevant to this endpoint's current alerts."""
     try:
-        from app.core.rag import search_documents  # type: ignore
+        from app.core.rag_manager import get_rag_manager
 
+        rag = get_rag_manager()
         query = alert or f"IT remediation for {hostname}"
-        results = search_documents(query=query, n_results=limit)
+        results = rag.search(collection_name="runbooks", query=query, n_results=limit)
         return {"hostname": hostname, "runbooks": results, "query": query}
     except ImportError:
         raise HTTPException(
@@ -617,9 +618,10 @@ async def index_runbook(
     collection: str = Query("runbooks", description="ChromaDB collection name"),
 ) -> dict:
     try:
-        from app.core.rag import index_document  # type: ignore
+        from app.core.rag_manager import get_rag_manager
 
-        index_document(doc_id=doc_id, content=content, collection=collection)
+        rag = get_rag_manager()
+        rag.index_document(collection_name=collection, document_id=doc_id, text=content)
         return {"ok": True, "doc_id": doc_id, "collection": collection}
     except ImportError:
         raise HTTPException(

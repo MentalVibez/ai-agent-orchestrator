@@ -1,0 +1,43 @@
+AI Agent Orchestrator has been deployed!
+
+Endpoint: https://{{ .Values.ingress.host }}/api/v1/health
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DATA RESIDENCY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LLM Provider : {{ .Values.llm.provider }}
+{{- if eq .Values.llm.provider "ollama" }}
+✓ Ollama (self-hosted) — prompts/responses stay on-prem
+{{- else }}
+⚠ WARNING: {{ .Values.llm.provider }} sends data to external servers.
+  For HIPAA compliance, switch to LLM_PROVIDER=ollama.
+{{- end }}
+
+Image Registry: {{ .Values.image.registry }}
+{{- if eq .Values.image.registry "ghcr.io" }}
+⚠ Using public ghcr.io — mirror to internal registry for full data residency.
+{{- else }}
+✓ Internal registry — images stay within the company.
+{{- end }}
+
+External Secrets: {{ .Values.externalSecrets.enabled }}
+{{- if .Values.externalSecrets.enabled }}
+✓ ESO pulling secrets from {{ .Values.externalSecrets.vault.server }}
+{{- else }}
+  Secrets managed manually — consider enabling External Secrets Operator.
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+QUICK START
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Create an admin API key:
+   kubectl exec -n {{ include "ai-agent-orchestrator.namespace" . }} \
+     deploy/{{ include "ai-agent-orchestrator.fullname" . }} -- \
+     python -c "from app.core.api_keys import create_api_key; ..."
+
+2. Verify health:
+   curl https://{{ .Values.ingress.host }}/api/v1/health
+
+3. View audit logs:
+   curl -H "X-API-Key: <admin-key>" \
+     https://{{ .Values.ingress.host }}/api/v1/admin/audit

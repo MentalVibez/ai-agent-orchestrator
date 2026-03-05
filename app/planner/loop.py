@@ -108,11 +108,13 @@ async def _run_planner_steps(
     approval_required_tools: Optional[List[str]] = None,
     start_step: int = 1,
     stream_tokens: bool = False,
+    api_key_id: Optional[str] = None,
 ) -> None:
     """Execute planner steps (LLM + tool calls) with tracing. Mutates steps, tool_calls_records, conversation.
     approval_required_tools: tool names that require HITL approval before execution.
     start_step: step index to start from (for resume after approval).
-    stream_tokens: when True, stream LLM output and emit token events for SSE."""
+    stream_tokens: when True, stream LLM output and emit token events for SSE.
+    api_key_id: originating API key — used for per-key monthly spend cap enforcement."""
     if approval_required_tools is None:
         approval_required_tools = []
     _cost_cap = getattr(settings, "max_cost_per_run_usd", 0.0)
@@ -148,7 +150,7 @@ Respond with exactly one JSON object, no other text. Choose one:
         async def _get_llm_response() -> str:
             if stream_tokens:
                 from app.core.services import get_service_container
-                llm = get_service_container()._llm_manager.get_provider()
+                llm = get_service_container().get_llm_manager().get_provider()
                 full: List[str] = []
                 try:
                     async for chunk in llm.stream(user_prompt, system_prompt=system):
@@ -167,6 +169,41 @@ Respond with exactly one JSON object, no other text. Choose one:
             await update_run(run_id, status="failed", error=err, steps=steps, tool_calls=tool_calls_records)
             await append_run_event(run_id, "status", {"status": "failed", "error": err})
             return
+
+        # Guard: per-key monthly spend cap
+        if api_key_id:
+            try:
+                from app.core.api_keys import get_monthly_spend_for_key
+                from app.db.database import SessionLocal as _SessionLocal
+                from app.db.models import ApiKeyRecord as _ApiKeyRecord
+
+                _now = datetime.now(timezone.utc)
+                _db = _SessionLocal()
+                try:
+                    _key_rec = _db.query(_ApiKeyRecord).filter_by(key_id=api_key_id).first()
+                    if _key_rec and _key_rec.max_monthly_cost_usd is not None:
+                        _monthly = get_monthly_spend_for_key(
+                            _db, api_key_id, _now.year, _now.month
+                        )
+                        if _monthly >= _key_rec.max_monthly_cost_usd:
+                            err = (
+                                f"Monthly LLM budget cap ${_key_rec.max_monthly_cost_usd:.2f} "
+                                f"reached for this key (spent ${_monthly:.4f})"
+                            )
+                            logger.warning("Per-key cap exceeded run %s key %s: %s", run_id, api_key_id, err)
+                            await update_run(
+                                run_id, status="failed", error=err,
+                                steps=steps, tool_calls=tool_calls_records,
+                            )
+                            await append_run_event(run_id, "status", {"status": "failed", "error": err})
+                            _cap_val = _key_rec.max_monthly_cost_usd
+                            from app.core.cap_notifications import notify_cap_breach as _notify
+                            asyncio.create_task(_notify(api_key_id, _monthly, _cap_val))
+                            return
+                finally:
+                    _db.close()
+            except Exception as _cap_exc:
+                logger.warning("Per-key cap check failed (non-blocking): %s", _cap_exc)
 
         with trace_step(run_id, step):
             _prompt_chars = len(system) + len(user_prompt)
@@ -352,6 +389,7 @@ async def run_planner_loop(
     llm_generate: Optional[Any] = None,
     request_id: Optional[str] = None,
     llm_manager: Optional[Any] = None,
+    api_key_id: Optional[str] = None,
 ) -> None:
     """
     Run the planner loop for the given run. Updates run in DB (steps, tool_calls, status, answer).
@@ -442,6 +480,7 @@ async def run_planner_loop(
             mcp_manager=mcp_manager,
             approval_required_tools=approval_required_tools,
             stream_tokens=stream_tokens,
+            api_key_id=api_key_id,
         )
 
 

@@ -19,6 +19,9 @@ _admin_deps = [Depends(verify_api_key), Depends(require_role("admin"))]
 class CreateKeyRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=120, description="Human label for this key")
     role: str = Field(default="operator", description="viewer | operator | admin")
+    max_monthly_cost_usd: float | None = Field(
+        default=None, ge=0, description="Monthly LLM spend cap in USD. NULL = no limit."
+    )
 
 
 class CreateKeyResponse(BaseModel):
@@ -26,6 +29,7 @@ class CreateKeyResponse(BaseModel):
     raw_key: str
     name: str
     role: str
+    max_monthly_cost_usd: float | None
     message: str
 
 
@@ -37,6 +41,7 @@ class KeyInfoResponse(BaseModel):
     created_at: str | None
     last_used_at: str | None
     revoked_at: str | None
+    max_monthly_cost_usd: float | None
 
 
 @router.post(
@@ -59,7 +64,12 @@ async def create_key(request: Request, body: CreateKeyRequest) -> CreateKeyRespo
 
     db = SessionLocal()
     try:
-        key_id, raw_key, record = create_api_key(db, name=body.name, role=body.role)
+        key_id, raw_key, record = create_api_key(
+            db,
+            name=body.name,
+            role=body.role,
+            max_monthly_cost_usd=body.max_monthly_cost_usd,
+        )
     finally:
         db.close()
 
@@ -68,6 +78,7 @@ async def create_key(request: Request, body: CreateKeyRequest) -> CreateKeyRespo
         raw_key=raw_key,
         name=record.name,
         role=record.role,
+        max_monthly_cost_usd=record.max_monthly_cost_usd,
         message="Store this key securely — it will not be shown again.",
     )
 

@@ -1,0 +1,14 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ai-agent-orchestrator.fullname" . }}
+  namespace: {{ include "ai-agent-orchestrator.namespace" . }}
+  labels:
+    {{- include "ai-agent-orchestrator.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "ai-agent-orchestrator.selectorLabels" . | nindent 6 }}
+{{- end }}

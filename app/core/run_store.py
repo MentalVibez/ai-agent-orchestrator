@@ -16,6 +16,7 @@ def _create_run_sync(
     goal: str,
     agent_profile_id: str = "default",
     context: Optional[Dict[str, Any]] = None,
+    api_key_id: Optional[str] = None,
 ) -> Run:
     run_id = str(uuid.uuid4())
     db = SessionLocal()
@@ -26,6 +27,7 @@ def _create_run_sync(
             agent_profile_id=agent_profile_id,
             status="pending",
             context=context,
+            api_key_id=api_key_id,
         )
         db.add(run)
         db.commit()
@@ -84,12 +86,15 @@ def _list_runs_sync(
     limit: int = 20,
     offset: int = 0,
     status: Optional[str] = None,
+    api_key_id: Optional[str] = None,
 ) -> List[Run]:
     db = SessionLocal()
     try:
         q = db.query(Run).order_by(Run.created_at.desc())
         if status:
             q = q.filter(Run.status == status)
+        if api_key_id is not None:
+            q = q.filter(Run.api_key_id == api_key_id)
         return q.offset(offset).limit(limit).all()
     finally:
         db.close()
@@ -149,9 +154,10 @@ async def create_run(
     goal: str,
     agent_profile_id: str = "default",
     context: Optional[Dict[str, Any]] = None,
+    api_key_id: Optional[str] = None,
 ) -> Run:
     """Create a new run with status pending. Returns the Run model."""
-    return await asyncio.to_thread(_create_run_sync, goal, agent_profile_id, context)
+    return await asyncio.to_thread(_create_run_sync, goal, agent_profile_id, context, api_key_id)
 
 
 async def append_run_event(
@@ -180,9 +186,10 @@ async def list_runs(
     limit: int = 20,
     offset: int = 0,
     status: Optional[str] = None,
+    api_key_id: Optional[str] = None,
 ) -> List[Run]:
-    """List runs, newest first. Optional filter by status."""
-    return await asyncio.to_thread(_list_runs_sync, limit, offset, status)
+    """List runs, newest first. Optional filter by status and api_key_id (for row-level security)."""
+    return await asyncio.to_thread(_list_runs_sync, limit, offset, status, api_key_id)
 
 
 async def update_run(
@@ -195,6 +202,7 @@ async def update_run(
     completed_at: Optional[Any] = None,
     pending_tool_call: Optional[Dict[str, Any]] = None,
     _clear_pending_tool_call: bool = False,
+    checkpoint_step_index: Optional[int] = None,
 ) -> Optional[Run]:
     """Update run fields. Returns updated Run or None if not found.
     Use pending_tool_call={...} to set, or _clear_pending_tool_call=True to clear."""
@@ -209,4 +217,5 @@ async def update_run(
         completed_at,
         pending_tool_call,
         _clear_pending_tool_call,
+        checkpoint_step_index,
     )

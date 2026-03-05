@@ -1,0 +1,14 @@
+{{- if .Values.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "ai-agent-orchestrator.namespace" . }}
+  labels:
+    {{- include "ai-agent-orchestrator.labels" . | nindent 4 }}
+    {{- if .Values.compliance.hipaa }}
+    compliance/hipaa: "true"
+    {{- end }}
+    {{- if .Values.compliance.soc2 }}
+    compliance/soc2: "true"
+    {{- end }}
+{{- end }}

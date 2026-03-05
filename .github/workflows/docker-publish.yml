@@ -17,9 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write      # Required to push to GHCR
-      id-token: write      # Required for keyless cosign signing (OIDC)
-      attestations: write  # Required to attach SBOM attestation
+      packages: write         # Required to push to GHCR
+      id-token: write         # Required for keyless cosign signing (OIDC)
+      attestations: write     # Required to attach SBOM attestation
+      security-events: write  # Required to upload Trivy SARIF to GitHub Security tab
 
     steps:
       - name: Checkout repository
@@ -79,6 +80,28 @@ jobs:
         run: |
           ref="${{ env.REGISTRY }}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
           echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+
+      # ── Vulnerability Scanning ──────────────────────────────────────────────
+      # Scan the pushed image for CVEs. Exit code 1 fails the build on
+      # CRITICAL/HIGH so unpatched vulnerabilities cannot be released.
+      # ignore-unfixed: true avoids blocking on CVEs the vendor hasn't fixed.
+      # SOC2 CC7.1 requires vulnerability management before every release.
+      - name: Scan image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: "${{ steps.image_ref.outputs.ref }}@${{ steps.push.outputs.digest }}"
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()              # upload even if scan found issues (for visibility)
+        with:
+          sarif_file: trivy.sarif
+          category: container-image
 
       # ── Supply Chain Security ───────────────────────────────────────────────
       # Sign the image with cosign using GitHub's OIDC token (keyless signing).

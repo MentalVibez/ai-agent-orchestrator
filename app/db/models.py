@@ -22,6 +22,7 @@ class ApiKeyRecord(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
+    max_monthly_cost_usd = Column(Float, nullable=True)  # NULL = no cap
 
     def to_dict(self) -> dict:
         return {
@@ -32,6 +33,7 @@ class ApiKeyRecord(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
             "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None,
+            "max_monthly_cost_usd": self.max_monthly_cost_usd,
         }
 
 
@@ -170,6 +172,8 @@ class Run(Base):
     pending_tool_call = Column(JSON, nullable=True)
     # P2.3: LangGraph-style checkpointing — last completed step index (0 = not started)
     checkpoint_step_index = Column(Integer, default=0, nullable=True)
+    # Row-level security: which API key created this run (NULL = legacy/admin)
+    api_key_id = Column(String(64), nullable=True, index=True)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for API response."""
@@ -186,6 +190,7 @@ class Run(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "api_key_id": self.api_key_id,
         }
         if self.status == "awaiting_approval":
             pending = getattr(self, "pending_tool_call", None)
@@ -379,6 +384,7 @@ class CostRecordDB(Base):
     agent_id = Column(String, nullable=True)
     endpoint = Column(String, nullable=True)
     request_id = Column(String, nullable=True)
+    api_key_id = Column(String(64), nullable=True, index=True)  # per-key spend tracking
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     def to_dict(self) -> dict:
@@ -396,4 +402,37 @@ class CostRecordDB(Base):
             "endpoint": self.endpoint,
             "request_id": self.request_id,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
+
+class AuditLogRecord(Base):
+    """One record per inbound HTTP request for compliance audit trails."""
+
+    __tablename__ = "audit_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    request_id = Column(String(64), index=True, nullable=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    method = Column(String(10), nullable=False)
+    path = Column(String(1024), nullable=False, index=True)
+    status_code = Column(Integer, nullable=True, index=True)
+    api_key_id = Column(String(64), nullable=True, index=True)
+    api_key_role = Column(String(32), nullable=True)
+    client_ip = Column(String(64), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    request_body = Column(Text, nullable=True)  # POST/DELETE only, redacted JSON
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "request_id": self.request_id,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "method": self.method,
+            "path": self.path,
+            "status_code": self.status_code,
+            "api_key_id": self.api_key_id,
+            "api_key_role": self.api_key_role,
+            "client_ip": self.client_ip,
+            "user_agent": self.user_agent,
+            "request_body": self.request_body,
         }

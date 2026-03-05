@@ -1,0 +1,139 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# AI Agent Orchestrator — Helm values
+# Override any value with --set or -f myvalues.yaml
+#
+# DATA RESIDENCY QUICK-START (HIPAA/SOC2):
+#   image.registry: harbor.company.internal        # Keep images in-house
+#   llm.provider: ollama                           # No data leaves company
+#   externalSecrets.enabled: true                  # Secrets from internal Vault
+#   compliance.dataResidency.enforceOnPremLLM: true
+# ─────────────────────────────────────────────────────────────────────────────
+
+replicaCount: 3
+
+# ── Image ────────────────────────────────────────────────────────────────────
+image:
+  # Override registry to use your internal Harbor/Nexus/ECR for data residency:
+  #   registry: harbor.company.internal
+  registry: ghcr.io
+  repository: OWNER/ai-agent-orchestrator
+  tag: latest
+  pullPolicy: IfNotPresent
+  # imagePullSecrets for internal registry authentication:
+  #   pullSecrets:
+  #     - name: harbor-regcred
+  pullSecrets: []
+
+# ── LLM Provider ─────────────────────────────────────────────────────────────
+# HIPAA/SOC2: Use ollama (self-hosted) to keep prompts and responses on-premises.
+# WARNING: openai/bedrock send data to external servers — not for HIPAA use
+# unless configured with AWS PrivateLink or Azure VNet.
+llm:
+  provider: ollama              # ollama | bedrock | openai
+  model: llama3.2
+  ollamaBaseUrl: http://ollama.internal:11434
+  # AWS Bedrock (use only with PrivateLink for HIPAA compliance):
+  # provider: bedrock
+  # model: anthropic.claude-3-haiku-20240307-v1:0
+  # region: us-east-1
+
+# ── Service ──────────────────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+# ── Ingress ──────────────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  tls: true
+  tlsSecretName: orchestrator-tls
+  host: orchestrator.company.internal
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+# ── Resources ────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 500m
+  limits:
+    memory: 2Gi
+    cpu: "1"
+
+# ── Autoscaling ──────────────────────────────────────────────────────────────
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+# ── Pod Disruption Budget ────────────────────────────────────────────────────
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# ── Secrets ──────────────────────────────────────────────────────────────────
+# Name of the Kubernetes Secret containing all environment secrets.
+# When externalSecrets.enabled=true, this Secret is created by ESO from Vault.
+# When externalSecrets.enabled=false, create it manually:
+#   kubectl create secret generic orchestrator-secrets \
+#     --from-literal=API_KEY=... --from-literal=DATABASE_URL=...
+secretName: orchestrator-secrets
+
+# ── PostgreSQL (self-hosted) ─────────────────────────────────────────────────
+# HIPAA: set internal=true to keep all data on-premises.
+postgresql:
+  enabled: true
+  internal: true              # true = deploy bundled PG; false = use external DATABASE_URL
+  image: postgres:16-alpine
+  persistence:
+    enabled: true
+    storageClass: ""          # Use cluster default; override with encrypted SC for HIPAA
+    size: 20Gi
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: "1"
+  # Note: configure storageClass with AES-256 encryption at rest for HIPAA compliance.
+  # On-prem: use Rook/Ceph with encryption, or LUKS at the node level.
+
+# ── External Secrets Operator ────────────────────────────────────────────────
+# Set enabled=true when ESO is installed in your cluster.
+# Requires externalSecrets.operator.installed=true (operator installed separately).
+externalSecrets:
+  enabled: false
+  backend: vault              # vault | aws-secrets-manager | azure-keyvault
+  vault:
+    # Self-hosted Vault — data never leaves your network:
+    server: https://vault.internal:8200
+    path: secret/ai-agent-orchestrator
+    version: v2               # KV v2 mount
+    authMethod: kubernetes    # kubernetes | token | approle
+    role: ai-agent-orchestrator
+  refreshInterval: 1h
+
+# ── Compliance / Data Residency ──────────────────────────────────────────────
+compliance:
+  hipaa: false                # Adds HIPAA annotations and enforces stricter defaults
+  soc2: false
+  dataResidency:
+    # Set true to refuse startup when a non-private LLM provider is configured.
+    enforceOnPremLLM: false
+    # Restrict which LLM providers are allowed. Empty = all allowed.
+    # Example: ["ollama"] blocks bedrock/openai at startup.
+    allowedLLMProviders: []
+
+# ── Network Policy ───────────────────────────────────────────────────────────
+networkPolicy:
+  enabled: true
+
+# ── Namespace ────────────────────────────────────────────────────────────────
+namespace:
+  create: true
+  name: ai-agent-orchestrator

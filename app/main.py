@@ -13,8 +13,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.routes import agents, api_keys, metrics, orchestrator, runs, webhooks
+from app.api.v1.routes import audit as audit_routes
+from app.api.v1.routes import compliance as compliance_routes
 from app.api.v1.routes import dex as dex_routes
 from app.api.v1.routes import rag as rag_routes
+from app.api.v1.routes import status as status_routes
 from app.core.auth import verify_metrics_token
 from app.core.config import settings
 from app.core.exceptions import (
@@ -28,6 +31,7 @@ from app.core.logging_config import configure_logging
 from app.core.rate_limit import RateLimitExceeded, _rate_limit_exceeded_handler, limiter
 from app.core.services import get_service_container
 from app.integrations import slack as slack_integration
+from app.middleware.audit_log import AuditLogMiddleware
 from app.middleware.graceful_shutdown import GracefulShutdownMiddleware
 from app.middleware.request_id import RequestIDMiddleware
 from app.models.request import HealthResponse
@@ -51,6 +55,22 @@ async def lifespan(app: FastAPI):
         logger.info(f"Version: {settings.app_version}")
         logger.info(f"LLM Provider: {settings.llm_provider}")
         logger.info(f"Debug Mode: {settings.debug}")
+
+        # ── Data residency: warn/block when external LLM is configured ──────
+        _EXTERNAL_LLM_PROVIDERS = {"openai", "bedrock"}
+        if settings.llm_provider in _EXTERNAL_LLM_PROVIDERS:
+            if getattr(settings, "data_residency_enforce_onprem_llm", False):
+                raise RuntimeError(
+                    f"DATA RESIDENCY VIOLATION: LLM provider '{settings.llm_provider}' sends "
+                    f"prompt/response data to external servers. Set LLM_PROVIDER=ollama or "
+                    f"disable DATA_RESIDENCY_ENFORCE_ONPREM_LLM."
+                )
+            logger.warning(
+                "DATA RESIDENCY: LLM provider '%s' sends prompt/response data to external "
+                "servers. For HIPAA/SOC2 compliance use LLM_PROVIDER=ollama with an internal "
+                "Ollama endpoint, or configure AWS PrivateLink/Azure VNet for Bedrock/OpenAI.",
+                settings.llm_provider,
+            )
 
         # Warn if running SQLite in a non-debug (production-like) environment
         from app.db.database import DATABASE_URL as _db_url
@@ -434,6 +454,7 @@ class ApiVersionHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(GracefulShutdownMiddleware)
 app.add_middleware(ApiVersionHeadersMiddleware)
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(AuditLogMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -453,12 +474,17 @@ app.include_router(metrics.router)
 app.include_router(runs.router)
 app.include_router(webhooks.router)
 app.include_router(api_keys.router)
+app.include_router(audit_routes.router)
 # RAG routes are always registered; individual endpoints return 503 if chromadb is not installed
 app.include_router(rag_routes.router)
 # DEX (Digital Employee Experience) routes
 app.include_router(dex_routes.router)
 # Slack / Microsoft Teams bot integration (always registered; no-ops when tokens not configured)
 app.include_router(slack_integration.router)
+# Compliance evidence report (admin-only)
+app.include_router(compliance_routes.router)
+# Operational status page (no auth required)
+app.include_router(status_routes.router)
 
 
 @app.get("/", tags=["root"])

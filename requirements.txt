@@ -38,6 +38,8 @@ opentelemetry-exporter-otlp-proto-http>=1.20.0
 # Keep these up-to-date when pip-audit reports new findings.
 # CVE-2026-26007: cryptography < 46.0.5 — missing EC subgroup validation (ECDSA/ECDH)
 cryptography>=46.0.5
+# OIDC JWT validation — uses the already-pinned cryptography package for RS256/RS384/RS512
+PyJWT[cryptography]>=2.8.0
 # CVE-2026-21441: urllib3 < 2.6.3 — decompression bomb in redirect body drain
 urllib3>=2.6.3
 # CVE-2026-0994: protobuf < 6.33.5 — DoS via deeply nested Any messages in json_format

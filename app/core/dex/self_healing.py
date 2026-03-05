@@ -188,7 +188,7 @@ async def handle_alert(
                 }
         except Exception as exc:
             logger.error(
-                "DEX self-healing: failed to start remediation for alert_id=%d: %s",
+                "DEX self-healing: failed to start remediation for alert_id=%s: %s",
                 alert.id,
                 exc,
             )

@@ -1,0 +1,16 @@
+apiVersion: v2
+name: ai-agent-orchestrator
+description: Multi-agent AI orchestrator for IT diagnostics (HIPAA/SOC2 ready)
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - ai
+  - orchestrator
+  - enterprise
+  - hipaa
+  - soc2
+  - dex
+maintainers:
+  - name: Platform Engineering
+home: https://github.com/OWNER/ai-agent-orchestrator

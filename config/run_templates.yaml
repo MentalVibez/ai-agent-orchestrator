@@ -1,0 +1,160 @@
+# Run Templates — pre-built run recipes for common IT operations tasks.
+# Each template has a goal_template with {param} placeholders, an agent profile, and
+# a params spec so callers know what to supply.
+#
+# Invoke via: POST /api/v1/run/template/{template_name}
+# Body: { "params": { "host": "server1.prod", "threshold_percent": "85" } }
+# List all: GET /api/v1/run/templates
+
+run_templates:
+
+  disk-health-check:
+    name: Disk Health Check
+    description: Check disk and inode usage on a host; alert on partitions above threshold.
+    agent_profile_id: default
+    goal_template: >
+      Check disk usage on {host}. Report each mounted partition with used/total/percent.
+      Alert if any partition exceeds {threshold_percent}% disk usage or 80% inode usage.
+      Include the top 5 largest directories under / if usage is critical.
+    params:
+      host:
+        description: Hostname or IP address to check
+        required: true
+      threshold_percent:
+        description: Disk usage percentage that triggers an alert (0-100)
+        required: false
+        default: "80"
+
+  service-restart:
+    name: Service Restart
+    description: Safely restart a systemd service with pre/post health checks and log capture.
+    agent_profile_id: default
+    goal_template: >
+      On host {host}, restart the systemd service named {service_name}.
+      Before restarting: capture its current status and last 20 log lines.
+      After restarting: verify it reaches active/running state within 30 seconds.
+      Report success or failure with any error output from journalctl.
+    params:
+      host:
+        description: Hostname or IP address
+        required: true
+      service_name:
+        description: Name of the systemd service (e.g. nginx, postgresql, myapp)
+        required: true
+
+  ssl-cert-check:
+    name: SSL Certificate Check
+    description: Check SSL certificate expiry, issuer, and SANs for a domain.
+    agent_profile_id: default
+    goal_template: >
+      Check the SSL/TLS certificate for {domain} (port {port}).
+      Report: expiry date, days remaining, issuer/CA, subject alternative names, and cipher suite.
+      Warn if the certificate expires within {days_warning} days.
+      Flag if the certificate chain is incomplete or self-signed.
+    params:
+      domain:
+        description: Domain name to check (e.g. api.example.com)
+        required: true
+      port:
+        description: HTTPS port
+        required: false
+        default: "443"
+      days_warning:
+        description: Number of days before expiry to issue a warning
+        required: false
+        default: "30"
+
+  log-error-triage:
+    name: Log Error Triage
+    description: Scan a log file for recent errors, group by type, and suggest root causes.
+    agent_profile_id: default
+    goal_template: >
+      Scan {log_path} for ERROR and CRITICAL level entries from the last {hours} hours.
+      Group errors by type/message pattern and count occurrences.
+      For the top 3 most frequent error groups: explain the likely cause and suggest a remediation step.
+      Output a structured summary: error type | count | likely cause | suggested fix.
+    params:
+      log_path:
+        description: Absolute path to log file or directory (e.g. /var/log/nginx/error.log)
+        required: true
+      hours:
+        description: How many hours back to scan
+        required: false
+        default: "1"
+
+  k8s-pod-health:
+    name: Kubernetes Pod Health Check
+    description: Check pod status across a namespace and diagnose unhealthy pods.
+    agent_profile_id: infrastructure
+    goal_template: >
+      Check the health of all pods in the {namespace} namespace on Kubernetes cluster {cluster}.
+      List pods that are not in Running/Completed state (CrashLoopBackOff, Pending, OOMKilled, etc.).
+      For each unhealthy pod: retrieve its recent logs (last 50 lines) and describe events.
+      Summarise: total pods | healthy | unhealthy | root cause per unhealthy pod.
+    params:
+      namespace:
+        description: Kubernetes namespace to inspect (e.g. production)
+        required: true
+      cluster:
+        description: kubectl context/cluster name
+        required: false
+        default: "default"
+
+  db-connection-check:
+    name: Database Connection Check
+    description: Test database connectivity, check pool stats, and report slow queries.
+    agent_profile_id: default
+    goal_template: >
+      Check database connectivity for {db_url} (type: {db_type}).
+      Verify: connection succeeds, latency is under 100ms, and connection pool is not exhausted.
+      Report: active connections, idle connections, max pool size.
+      List the 5 slowest queries from the past {hours} hours if the database supports query stats.
+      Flag any connections that have been idle for more than 10 minutes.
+    params:
+      db_url:
+        description: Database connection string (e.g. postgresql://user@host:5432/dbname)
+        required: true
+      db_type:
+        description: Database type (postgresql, mysql, sqlite)
+        required: false
+        default: "postgresql"
+      hours:
+        description: Lookback window for slow query analysis
+        required: false
+        default: "1"
+
+  endpoint-dex-scan:
+    name: DEX Endpoint Health Scan
+    description: Run a full Digital Employee Experience health scan on a registered endpoint.
+    agent_profile_id: dex_proactive
+    goal_template: >
+      Perform a full DEX health scan on endpoint {endpoint_id}.
+      Collect and report: device health score, network quality score, application performance score.
+      Flag any dimension below {alert_threshold} (0-100). For each flagged dimension,
+      list the top contributing factor and the recommended remediation action.
+    params:
+      endpoint_id:
+        description: Registered DEX endpoint ID (UUID)
+        required: true
+      alert_threshold:
+        description: Score below which a dimension is considered degraded (0-100)
+        required: false
+        default: "60"
+
+  security-patch-audit:
+    name: Security Patch Audit
+    description: Audit a host for missing OS and package security patches.
+    agent_profile_id: infrastructure
+    goal_template: >
+      Audit host {host} for missing security patches.
+      Check: OS patch level, unpatched CVEs with CVSS >= {min_cvss}, and outdated packages.
+      For each critical/high CVE found: report CVE ID, affected package, CVSS score, and fix version.
+      Prioritise by CVSS score descending. Provide the recommended patch command to apply all fixes.
+    params:
+      host:
+        description: Hostname or IP to audit
+        required: true
+      min_cvss:
+        description: Minimum CVSS score to include (0.0-10.0)
+        required: false
+        default: "7.0"

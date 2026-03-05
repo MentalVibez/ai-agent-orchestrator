@@ -32,9 +32,10 @@ from app.core.config import settings
 from app.core.rate_limit import limiter
 from app.core.run_queue import enqueue_run
 from app.core.run_store import create_run, get_run_by_id, get_run_events, list_runs
+from app.core.run_templates import get_run_template, list_run_templates, render_template_goal
 from app.core.validation import validate_agent_profile_id, validate_goal, validate_run_context
 from app.mcp.config_loader import get_enabled_agent_profiles, load_mcp_servers_config
-from app.models.run import ApproveRunRequest, RunDetailResponse, RunRequest, RunResponse, RunStatus
+from app.models.run import ApproveRunRequest, RunDetailResponse, RunRequest, RunResponse, RunStatus, RunTemplateRequest
 from app.planner.loop import (
     execute_approved_tool_and_update_run,
     resume_planner_loop,
@@ -367,6 +368,103 @@ async def list_agent_profiles(
             for pid, cfg in profiles
         ],
     }
+
+
+@router.get(
+    "/run/templates",
+    summary="List available run templates",
+    description="Returns all run templates defined in config/run_templates.yaml with their parameter schemas.",
+)
+@limiter.limit(f"{settings.rate_limit_per_minute}/minute")
+async def get_run_templates(
+    request: Request,
+    api_key: str = Depends(verify_api_key),
+) -> dict:
+    """List all run templates with name, description, and parameter schema."""
+    return {"templates": list_run_templates()}
+
+
+@router.post(
+    "/run/template/{template_name}",
+    response_model=RunResponse,
+    status_code=201,
+    summary="Start a run from a template",
+    description=(
+        "Render a pre-built run template with caller-supplied params and start a run. "
+        "Use GET /run/templates to discover available templates and their parameter schemas."
+    ),
+)
+@limiter.limit(f"{settings.rate_limit_per_minute}/minute")
+async def start_run_from_template(
+    request: Request,
+    template_name: str,
+    body: RunTemplateRequest,
+    api_key: str = Depends(verify_api_key),
+) -> RunResponse:
+    """Start a run by rendering a named template with the supplied params."""
+    template = get_run_template(template_name)
+    if template is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Template '{template_name}' not found. Use GET /run/templates to list available templates.",
+        )
+
+    try:
+        goal, agent_profile_id = render_template_goal(template, body.params)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    # Guard: max concurrent runs per API key (same as POST /run)
+    api_key_id = getattr(request.state, "api_key_id", "anon")
+    if settings.max_concurrent_runs_per_key > 0:
+        async with _get_active_runs_lock():
+            active = _active_runs.get(api_key_id, 0)
+            if active >= settings.max_concurrent_runs_per_key:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Too many concurrent runs ({active}). Wait for existing runs to finish.",
+                )
+            _active_runs[api_key_id] = active + 1
+
+    context: dict = {}
+    if body.stream_tokens:
+        context["_stream_tokens"] = True
+
+    profile_id = validate_agent_profile_id(agent_profile_id)
+    run = await create_run(goal=goal, agent_profile_id=profile_id, context=context)
+
+    enqueued = await enqueue_run(
+        run_id=run.run_id,
+        goal=goal,
+        agent_profile_id=profile_id,
+        context=context,
+    )
+    if not enqueued:
+        req_id = getattr(request.state, "request_id", None)
+        llm_manager = request.app.state.container.get_llm_manager()
+        asyncio.create_task(
+            _tracked_planner(
+                api_key_id=api_key_id,
+                run_id=run.run_id,
+                goal=goal,
+                agent_profile_id=profile_id,
+                context=context,
+                request_id=req_id,
+                llm_manager=llm_manager,
+            )
+        )
+    else:
+        async with _get_active_runs_lock():
+            _active_runs[api_key_id] = max(0, _active_runs.get(api_key_id, 1) - 1)
+
+    return RunResponse(
+        run_id=run.run_id,
+        status=RunStatus(run.status),
+        goal=run.goal,
+        agent_profile_id=run.agent_profile_id,
+        created_at=run.created_at.isoformat() if run.created_at else None,
+        message=f"Run started from template '{template_name}'. Poll GET /runs/{{run_id}} for status.",
+    )
 
 
 @router.get("/mcp/servers")

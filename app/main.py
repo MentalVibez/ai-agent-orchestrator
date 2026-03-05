@@ -15,6 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.v1.routes import agents, api_keys, metrics, orchestrator, runs, webhooks
 from app.api.v1.routes import dex as dex_routes
 from app.api.v1.routes import rag as rag_routes
+from app.integrations import slack as slack_integration
 from app.core.auth import verify_metrics_token
 from app.core.config import settings
 from app.core.exceptions import (
@@ -456,6 +457,8 @@ app.include_router(api_keys.router)
 app.include_router(rag_routes.router)
 # DEX (Digital Employee Experience) routes
 app.include_router(dex_routes.router)
+# Slack / Microsoft Teams bot integration (always registered; no-ops when tokens not configured)
+app.include_router(slack_integration.router)
 
 
 @app.get("/", tags=["root"])

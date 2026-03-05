@@ -49,6 +49,9 @@ dev = [
     "pytest-mock>=3.11.1",
 ]
 
+[project.scripts]
+orchestrator-mcp = "app.mcp.server:main"
+
 [project.urls]
 Homepage = "https://github.com/MentalVibez/ai-agent-orchestrator"
 Documentation = "https://github.com/MentalVibez/ai-agent-orchestrator#readme"

@@ -97,6 +97,13 @@ class Settings(BaseSettings):
     # Agent message bus queue size per agent. Prevents unbounded memory growth under producer pressure.
     agent_bus_queue_maxsize: int = Field(default=1000, alias="AGENT_BUS_QUEUE_MAXSIZE")
 
+    # Slack bot integration (optional — leave empty to disable)
+    slack_bot_token: str = Field(default="", alias="SLACK_BOT_TOKEN")
+    slack_signing_secret: str = Field(default="", alias="SLACK_SIGNING_SECRET")
+    # Microsoft Teams bot integration (optional — leave empty to disable)
+    teams_app_id: str = Field(default="", alias="TEAMS_APP_ID")
+    teams_app_password: str = Field(default="", alias="TEAMS_APP_PASSWORD")
+
     # DEX (Digital Employee Experience) Settings
     # Scan interval in minutes for the arq scheduled fleet health scan job
     dex_scan_interval_minutes: int = Field(default=15, alias="DEX_SCAN_INTERVAL_MINUTES")

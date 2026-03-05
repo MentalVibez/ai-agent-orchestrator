@@ -45,6 +45,19 @@ class RunRequest(BaseModel):
     }
 
 
+class RunTemplateRequest(BaseModel):
+    """Request to start a run from a named template."""
+
+    params: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Template parameter values keyed by parameter name",
+    )
+    stream_tokens: bool = Field(
+        default=False,
+        description="When true, LLM token chunks are emitted as SSE 'token' events during the run",
+    )
+
+
 class ToolCallRecord(BaseModel):
     """Record of one MCP tool call in a run."""
 

@@ -113,3 +113,23 @@ jobs:
           name: sbom-${{ github.sha }}
           path: sbom.spdx.json
           retention-days: 90
+
+      # ── SLSA Level 2 Provenance ─────────────────────────────────────────────
+      # Generate a signed SLSA Build Provenance attestation meeting Level 2:
+      #   L1 – provenance exists (generated in CI)
+      #   L2 – provenance is signed; build platform is a hosted service (GHA)
+      #
+      # The attestation is stored in GitHub's attestation store (tied to the repo)
+      # and pushed alongside the image in the registry.
+      #
+      # Verify with:
+      #   gh attestation verify oci://<image>@<digest> --owner <owner>
+      #
+      # Download all attestations:
+      #   gh attestation download oci://<image>@<digest> --owner <owner>
+      - name: Generate SLSA Level 2 provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

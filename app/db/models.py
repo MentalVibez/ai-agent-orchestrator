@@ -23,6 +23,7 @@ class ApiKeyRecord(Base):
     last_used_at = Column(DateTime(timezone=True), nullable=True)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
     max_monthly_cost_usd = Column(Float, nullable=True)  # NULL = no cap
+    webhook_url = Column(Text, nullable=True)  # Outbound webhook for run terminal events
 
     def to_dict(self) -> dict:
         return {
@@ -34,6 +35,7 @@ class ApiKeyRecord(Base):
             "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None,
             "revoked_at": self.revoked_at.isoformat() if self.revoked_at else None,
             "max_monthly_cost_usd": self.max_monthly_cost_usd,
+            "webhook_url": self.webhook_url,
         }
 
 

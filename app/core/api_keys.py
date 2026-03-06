@@ -51,6 +51,7 @@ def create_api_key(
     name: str,
     role: str = "operator",
     max_monthly_cost_usd: Optional[float] = None,
+    webhook_url: Optional[str] = None,
 ) -> tuple[str, str, ApiKeyRecord]:
     """Create and persist a new API key.
 
@@ -67,11 +68,39 @@ def create_api_key(
         role=role,
         is_active=True,
         max_monthly_cost_usd=max_monthly_cost_usd,
+        webhook_url=webhook_url,
     )
     db.add(record)
     db.commit()
     db.refresh(record)
     return key_id, raw_key, record
+
+
+_MISSING = object()  # Sentinel to distinguish "not passed" from explicit None
+
+
+def update_api_key(
+    db: Session,
+    key_id: str,
+    *,
+    webhook_url: object = _MISSING,
+    max_monthly_cost_usd: object = _MISSING,
+) -> Optional[ApiKeyRecord]:
+    """Partially update mutable fields on an existing API key.
+
+    Pass only the fields you want to change; unspecified fields are left unchanged.
+    Returns the updated record, or None if key_id is not found.
+    """
+    record = db.query(ApiKeyRecord).filter(ApiKeyRecord.key_id == key_id).first()
+    if not record:
+        return None
+    if webhook_url is not _MISSING:
+        record.webhook_url = webhook_url  # type: ignore[assignment]
+    if max_monthly_cost_usd is not _MISSING:
+        record.max_monthly_cost_usd = max_monthly_cost_usd  # type: ignore[assignment]
+    db.commit()
+    db.refresh(record)
+    return record
 
 
 def lookup_api_key(db: Session, raw_key: str) -> Optional[ApiKeyRecord]:

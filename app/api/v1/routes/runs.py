@@ -209,6 +209,8 @@ async def approve_run(
             error="Tool call rejected by user",
             _clear_pending_tool_call=True,
         )
+        from app.core.run_webhooks import notify_run_terminal as _notify_webhook
+        asyncio.create_task(_notify_webhook(run_id, run.goal, "failed", api_key_id=run.api_key_id, error="Tool call rejected by user"))
         return {"run_id": run_id, "status": "failed", "message": "Rejected."}
     approver_id = request.headers.get("X-API-Key", "unknown")
     ok = await execute_approved_tool_and_update_run(
@@ -249,6 +251,8 @@ async def reject_run(
         error="Tool call rejected by user",
         _clear_pending_tool_call=True,
     )
+    from app.core.run_webhooks import notify_run_terminal as _notify_webhook
+    asyncio.create_task(_notify_webhook(run_id, run.goal, "failed", api_key_id=run.api_key_id, error="Tool call rejected by user"))
     return {"run_id": run_id, "status": "failed", "message": "Rejected."}
 
 
@@ -269,6 +273,8 @@ async def cancel_run(
     from app.core.run_store import update_run as do_update
 
     await do_update(run_id, status="cancelled")
+    from app.core.run_webhooks import notify_run_terminal as _notify_webhook
+    asyncio.create_task(_notify_webhook(run_id, run.goal, "cancelled", api_key_id=run.api_key_id))
     return {"run_id": run_id, "status": "cancelled", "message": "Cancel requested."}
 
 

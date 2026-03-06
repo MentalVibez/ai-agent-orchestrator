@@ -168,6 +168,8 @@ Respond with exactly one JSON object, no other text. Choose one:
             logger.warning("Cost cap exceeded for run %s: %s", run_id, err)
             await update_run(run_id, status="failed", error=err, steps=steps, tool_calls=tool_calls_records)
             await append_run_event(run_id, "status", {"status": "failed", "error": err})
+            from app.core.run_webhooks import notify_run_terminal as _notify_webhook
+            asyncio.create_task(_notify_webhook(run_id, goal_for_prompt, "failed", api_key_id=api_key_id, error=err))
             return
 
         # Guard: per-key monthly spend cap
@@ -199,6 +201,8 @@ Respond with exactly one JSON object, no other text. Choose one:
                             _cap_val = _key_rec.max_monthly_cost_usd
                             from app.core.cap_notifications import notify_cap_breach as _notify
                             asyncio.create_task(_notify(api_key_id, _monthly, _cap_val))
+                            from app.core.run_webhooks import notify_run_terminal as _notify_webhook
+                            asyncio.create_task(_notify_webhook(run_id, goal_for_prompt, "failed", api_key_id=api_key_id, error=err))
                             return
                 finally:
                     _db.close()
@@ -229,6 +233,8 @@ Respond with exactly one JSON object, no other text. Choose one:
                     "status",
                     {"status": "failed", "error": f"LLM call timed out after {llm_timeout}s"},
                 )
+                from app.core.run_webhooks import notify_run_terminal as _notify_webhook
+                asyncio.create_task(_notify_webhook(run_id, goal_for_prompt, "failed", api_key_id=api_key_id, error=f"LLM call timed out after {llm_timeout}s"))
                 return
             except Exception as e:
                 logger.exception("Planner LLM call failed: %s", e)
@@ -240,6 +246,8 @@ Respond with exactly one JSON object, no other text. Choose one:
                     tool_calls=tool_calls_records,
                 )
                 await append_run_event(run_id, "status", {"status": "failed", "error": str(e)})
+                from app.core.run_webhooks import notify_run_terminal as _notify_webhook
+                asyncio.create_task(_notify_webhook(run_id, goal_for_prompt, "failed", api_key_id=api_key_id, error=str(e)))
                 return
 
             # Accumulate estimated cost (characters / 4 ≈ tokens; best-effort guardrail)
@@ -278,6 +286,8 @@ Respond with exactly one JSON object, no other text. Choose one:
                 await append_run_event(run_id, "step", step_data)
                 await append_run_event(run_id, "status", {"status": "completed"})
                 await append_run_event(run_id, "answer", {"answer": answer})
+                from app.core.run_webhooks import notify_run_terminal as _notify_webhook
+                asyncio.create_task(_notify_webhook(run_id, goal_for_prompt, "completed", api_key_id=api_key_id, answer=answer))
                 return
 
             if parsed.get("action") == "tool_call":
@@ -303,6 +313,8 @@ Respond with exactly one JSON object, no other text. Choose one:
                         "status",
                         {"status": "awaiting_approval", "pending_tool_call": pending},
                     )
+                    from app.core.run_webhooks import notify_run_terminal as _notify_webhook
+                    asyncio.create_task(_notify_webhook(run_id, goal_for_prompt, "awaiting_approval", api_key_id=api_key_id))
                     return
                 with trace_tool_call(run_id, server_id, tool_name):
                     try:
@@ -379,6 +391,8 @@ Respond with exactly one JSON object, no other text. Choose one:
     )
     await append_run_event(run_id, "status", {"status": "completed"})
     await append_run_event(run_id, "answer", {"answer": answer_max})
+    from app.core.run_webhooks import notify_run_terminal as _notify_webhook
+    asyncio.create_task(_notify_webhook(run_id, goal_for_prompt, "completed", api_key_id=api_key_id, answer=answer_max))
 
 
 async def run_planner_loop(

@@ -231,6 +231,46 @@ class TestNotifyRunTerminal:
         assert payload["event"] == "run.awaiting_approval"
 
     @pytest.mark.asyncio
+    async def test_adds_signature_headers_when_secret_configured(self, use_in_memory_db):
+        """When outbound secret is set, webhook includes verifiable HMAC headers."""
+        import hashlib
+        import hmac
+        import json
+
+        from app.core.run_webhooks import notify_run_terminal
+
+        key_id = _make_key_with_webhook(use_in_memory_db, "signed-key", "https://example.com/hook")
+
+        mock_resp = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.core.run_webhooks.httpx") as mock_httpx:
+            with patch("app.core.run_webhooks.time.time", return_value=1700000000):
+                with patch("app.core.run_webhooks.settings") as mock_settings:
+                    mock_settings.outbound_webhook_secret = "test-secret"
+                    mock_settings.webhook_secret = ""
+                    mock_httpx.AsyncClient.return_value = mock_client
+                    await notify_run_terminal(
+                        "run-9", "signed goal", "completed", api_key_id=key_id, answer="ok"
+                    )
+
+        kwargs = mock_client.post.call_args[1]
+        payload = kwargs["json"]
+        headers = kwargs["headers"]
+        assert headers["X-Webhook-Timestamp"] == "1700000000"
+
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        expected = hmac.new(
+            b"test-secret",
+            f"1700000000.{canonical}".encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        assert headers["X-Webhook-Signature"] == f"sha256={expected}"
+
+    @pytest.mark.asyncio
     async def test_swallows_connect_error(self, use_in_memory_db):
         """ConnectError should be swallowed — no raise."""
         import httpx as _httpx
@@ -332,3 +372,8 @@ class TestApiKeyWebhookRoutes:
             headers={"X-API-Key": admin_key},
         )
         assert resp.status_code == 404
+
+
+
+
+

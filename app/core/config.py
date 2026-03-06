@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     # When True (default), reject webhook requests if WEBHOOK_SECRET is not configured.
     # Set to False to allow unauthenticated webhooks (not recommended for production).
     webhook_require_auth: bool = Field(default=True, alias="WEBHOOK_REQUIRE_AUTH")
+    # Secret used to sign outbound run-event webhooks (X-Webhook-Signature).
+    # Empty = outbound webhook requests are sent unsigned.
+    outbound_webhook_secret: str = Field(default="", alias="OUTBOUND_WEBHOOK_SECRET")
     # Restrict file tools (read, list, search, metadata) to paths under this directory. Empty = use process cwd.
     agent_workspace_root: str = Field(default="", alias="AGENT_WORKSPACE_ROOT")
     # Best-effort prompt injection filter: redact blocklist phrases in user goal/context. Set false to disable.
@@ -162,3 +165,4 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+

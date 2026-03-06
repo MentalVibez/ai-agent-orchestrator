@@ -1,0 +1,200 @@
+name: Staging Reliability Gate
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  push:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  reliability-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: orchestrator
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchestrator
+      RUN_QUEUE_URL: redis://localhost:6379/0
+      REQUIRE_API_KEY: "true"
+      API_KEY: staging-gate-key
+      LLM_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://localhost:11434
+      DEBUG: "false"
+      WEBHOOK_REQUIRE_AUTH: "false"
+      POSTGRES_CID: ${{ job.services.postgres.id }}
+      REDIS_CID: ${{ job.services.redis.id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Apply DB migrations
+        run: alembic upgrade head
+
+      - name: Start API and worker
+        run: |
+          set -euo pipefail
+          nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 > api.log 2>&1 &
+          echo $! > api.pid
+          nohup arq app.worker.WorkerSettings > worker.log 2>&1 &
+          echo $! > worker.pid
+
+      - name: Wait for API readiness
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/api/v1/health >/tmp/health.json; then
+              cat /tmp/health.json
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API did not become ready in time"
+          exit 1
+
+      - name: Smoke checks (API + worker + queue)
+        run: |
+          set -euo pipefail
+
+          # Auth should be enforced
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/v1/runs)
+          test "$code" = "401"
+
+          # Authenticated list runs
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: ${API_KEY}" http://localhost:8000/api/v1/runs)
+          test "$code" = "200"
+
+          # Create a run and ensure it leaves pending/running state.
+          run_id=$(curl -sS -X POST http://localhost:8000/api/v1/run \
+            -H "X-API-Key: ${API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"goal":"staging reliability smoke run","agent_profile_id":"default"}' | \
+            python -c "import sys, json; print(json.load(sys.stdin)['run_id'])")
+
+          echo "Smoke run_id=${run_id}"
+          for i in $(seq 1 60); do
+            status=$(curl -sS -H "X-API-Key: ${API_KEY}" "http://localhost:8000/api/v1/runs/${run_id}" | \
+              python -c "import sys, json; print(json.load(sys.stdin)['status'])")
+            echo "smoke status=${status}"
+            case "$status" in
+              completed|failed|cancelled)
+                exit 0
+                ;;
+            esac
+            sleep 2
+          done
+
+          echo "Run ${run_id} did not reach terminal state"
+          exit 1
+
+      - name: Failure drill - Postgres interruption and recovery
+        run: |
+          set -euo pipefail
+
+          docker stop "$POSTGRES_CID"
+          sleep 5
+
+          # Health endpoint should still respond even if degraded/unhealthy.
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/v1/health)
+          test "$code" = "200"
+
+          docker start "$POSTGRES_CID"
+
+          # Wait for DB recovery signal via health endpoint status != unhealthy.
+          for i in $(seq 1 60); do
+            status=$(curl -sS http://localhost:8000/api/v1/health | python -c "import sys, json; print(json.load(sys.stdin)['status'])")
+            echo "post-db-recovery health=${status}"
+            if [ "$status" = "healthy" ] || [ "$status" = "degraded" ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Health did not recover after Postgres restart"
+          exit 1
+
+      - name: Failure drill - Redis interruption fallback
+        run: |
+          set -euo pipefail
+
+          docker stop "$REDIS_CID"
+          sleep 3
+
+          # With Redis down, /run should still start via in-process fallback.
+          run_id=$(curl -sS -X POST http://localhost:8000/api/v1/run \
+            -H "X-API-Key: ${API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"goal":"redis failure fallback run","agent_profile_id":"default"}' | \
+            python -c "import sys, json; print(json.load(sys.stdin)['run_id'])")
+
+          echo "redis-fallback run_id=${run_id}"
+          for i in $(seq 1 60); do
+            status=$(curl -sS -H "X-API-Key: ${API_KEY}" "http://localhost:8000/api/v1/runs/${run_id}" | \
+              python -c "import sys, json; print(json.load(sys.stdin)['status'])")
+            echo "redis-fallback status=${status}"
+            case "$status" in
+              completed|failed|cancelled)
+                break
+                ;;
+            esac
+            sleep 2
+          done
+
+          docker start "$REDIS_CID"
+
+      - name: Upload reliability logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-reliability-logs-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            api.log
+            worker.log
+          retention-days: 30
+
+      - name: Print logs on failure
+        if: failure()
+        run: |
+          echo "=== API LOG ==="
+          cat api.log || true
+          echo "=== WORKER LOG ==="
+          cat worker.log || true
+
+      - name: Cleanup processes
+        if: always()
+        run: |
+          kill "$(cat api.pid)" 2>/dev/null || true
+          kill "$(cat worker.pid)" 2>/dev/null || true

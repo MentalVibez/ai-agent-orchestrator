@@ -6,19 +6,44 @@ URL registered on the API key that owns the run.
 
 Fire-and-forget: the caller wraps this in asyncio.create_task() so failures
 never block the planner. Errors are logged and swallowed.
-
-TODO (future): add HMAC-SHA256 request signing (X-Signature-256 header) so
-receivers can verify payloads originate from this service.
 """
 
+import hashlib
+import hmac
+import json
 import logging
-from typing import Optional
+import time
+from typing import Any, Dict, Optional
 
 import httpx
 
+from app.core.config import settings
 from app.db.database import SessionLocal
 
 logger = logging.getLogger(__name__)
+
+
+def _build_webhook_headers(payload: Dict[str, Any]) -> Dict[str, str]:
+    """Build optional HMAC signing headers for outbound run-event webhooks.
+
+    Signing is enabled when OUTBOUND_WEBHOOK_SECRET is set. For backward
+    compatibility, WEBHOOK_SECRET is used as a fallback when OUTBOUND_WEBHOOK_SECRET
+    is empty.
+    """
+    secret = getattr(settings, "outbound_webhook_secret", "") or getattr(settings, "webhook_secret", "")
+    if not secret:
+        return {}
+
+    # Canonicalize JSON so both sender and receiver can reproduce the same digest.
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    signing_input = f"{timestamp}.{canonical}".encode("utf-8")
+    signature = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).hexdigest()
+
+    return {
+        "X-Webhook-Timestamp": timestamp,
+        "X-Webhook-Signature": f"sha256={signature}",
+    }
 
 
 async def notify_run_terminal(
@@ -66,9 +91,10 @@ async def notify_run_terminal(
             "completed_at": completed_at,
             "text": f"Run {run_id} {status}.",
         }
+        headers = _build_webhook_headers(payload)
 
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(webhook_url, json=payload)
+            resp = await client.post(webhook_url, json=payload, headers=headers)
             resp.raise_for_status()
 
     except Exception as exc:

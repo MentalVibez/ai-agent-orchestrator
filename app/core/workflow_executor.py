@@ -1,6 +1,7 @@
 """Workflow executor for multi-step, multi-agent workflows."""
 
 import asyncio
+import ast
 import logging
 import time
 from collections import defaultdict, deque
@@ -16,6 +17,121 @@ from app.models.workflow import (
 
 logger = logging.getLogger(__name__)
 
+class _SafeConditionValidator(ast.NodeVisitor):
+    """Validate a limited, side-effect-free condition expression AST."""
+
+    _ALLOWED_NODES = (
+        ast.Expression,
+        ast.BoolOp,
+        ast.UnaryOp,
+        ast.Compare,
+        ast.Name,
+        ast.Load,
+        ast.Constant,
+        ast.And,
+        ast.Or,
+        ast.Not,
+        ast.Eq,
+        ast.NotEq,
+        ast.Gt,
+        ast.GtE,
+        ast.Lt,
+        ast.LtE,
+        ast.In,
+        ast.NotIn,
+        ast.Subscript,
+        ast.Attribute,
+        ast.Call,
+    )
+
+    def generic_visit(self, node: ast.AST) -> None:
+        if not isinstance(node, self._ALLOWED_NODES):
+            raise ValueError(f"Unsupported expression node: {type(node).__name__}")
+        super().generic_visit(node)
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if node.id != "context":
+            raise ValueError(f"Unsupported name: {node.id}")
+        super().generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        # Allow only context.get(...)
+        if not (isinstance(node.value, ast.Name) and node.value.id == "context" and node.attr == "get"):
+            raise ValueError("Only context.get(...) calls are allowed in conditions")
+        super().generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if not isinstance(node.func, ast.Attribute):
+            raise ValueError("Only method calls are allowed in conditions")
+        self.visit(node.func)
+        if node.keywords:
+            raise ValueError("Keyword arguments are not allowed in conditions")
+        if len(node.args) > 2:
+            raise ValueError("context.get() accepts at most 2 arguments in conditions")
+        for arg in node.args:
+            self.visit(arg)
+
+
+def _eval_condition_node(node: ast.AST, context: Dict[str, Any]) -> Any:
+    """Evaluate a validated condition AST node without using eval."""
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        if node.id == "context":
+            return context
+        raise ValueError(f"Unsupported name: {node.id}")
+    if isinstance(node, ast.Subscript):
+        value = _eval_condition_node(node.value, context)
+        key = _eval_condition_node(node.slice, context)
+        return value[key]
+    if isinstance(node, ast.Call):
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != "get":
+            raise ValueError("Only context.get(...) calls are allowed in conditions")
+        target = _eval_condition_node(node.func.value, context)
+        args = [_eval_condition_node(arg, context) for arg in node.args]
+        return target.get(*args)
+    if isinstance(node, ast.BoolOp):
+        if isinstance(node.op, ast.And):
+            return all(bool(_eval_condition_node(v, context)) for v in node.values)
+        if isinstance(node.op, ast.Or):
+            return any(bool(_eval_condition_node(v, context)) for v in node.values)
+        raise ValueError("Unsupported boolean operator")
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        return not bool(_eval_condition_node(node.operand, context))
+    if isinstance(node, ast.Compare):
+        left = _eval_condition_node(node.left, context)
+        for op, comparator in zip(node.ops, node.comparators):
+            right = _eval_condition_node(comparator, context)
+            if isinstance(op, ast.Eq):
+                ok = left == right
+            elif isinstance(op, ast.NotEq):
+                ok = left != right
+            elif isinstance(op, ast.Gt):
+                ok = left > right
+            elif isinstance(op, ast.GtE):
+                ok = left >= right
+            elif isinstance(op, ast.Lt):
+                ok = left < right
+            elif isinstance(op, ast.LtE):
+                ok = left <= right
+            elif isinstance(op, ast.In):
+                ok = left in right
+            elif isinstance(op, ast.NotIn):
+                ok = left not in right
+            else:
+                raise ValueError(f"Unsupported comparison operator: {type(op).__name__}")
+            if not ok:
+                return False
+            left = right
+        return True
+    raise ValueError(f"Unsupported expression node: {type(node).__name__}")
+
+
+def _safe_eval_condition(condition: str, context: Dict[str, Any]) -> bool:
+    """Safely evaluate workflow condition against context with restricted AST."""
+    tree = ast.parse(condition, mode="eval")
+    _SafeConditionValidator().visit(tree)
+    return bool(_eval_condition_node(tree.body, context))
 
 class WorkflowExecutor:
     """Executes multi-step workflows involving multiple agents."""
@@ -136,8 +252,7 @@ class WorkflowExecutor:
             output=workflow_context,
             error=None if success else "Workflow execution failed",
             duration=duration,
-        )
-
+        )
     def _evaluate_condition(
         self, condition: Optional[str], context: Dict[str, Any]
     ) -> bool:
@@ -146,18 +261,18 @@ class WorkflowExecutor:
         Returns True if step should run, False to skip.
         Empty/None condition always returns True.
 
-        The expression has access to 'context' dict only (no builtins for safety).
+        The expression has access to 'context' dict only via:
+        - context["key"] / context.get("key")
+        - boolean logic and comparisons
         Example: "context.get('status') == 'ok'"
         """
         if not condition:
             return True
         try:
-            result = eval(condition, {"__builtins__": {}}, {"context": context})  # noqa: S307  # nosec B307
-            return bool(result)
+            return _safe_eval_condition(condition, context)
         except Exception as e:
             logger.warning("Condition evaluation failed (%r): %s — skipping step", condition, e)
             return False
-
     async def execute_step(
         self, step: WorkflowStep, context: Optional[Dict[str, Any]] = None
     ) -> WorkflowStepResult:
@@ -384,3 +499,15 @@ class WorkflowExecutor:
             context.update(step.context)
 
         return context
+
+
+
+
+
+
+
+
+
+
+
+

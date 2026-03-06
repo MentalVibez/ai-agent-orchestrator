@@ -117,6 +117,7 @@ async def start_run(
 
     # Guard: max concurrent runs per API key
     api_key_id = getattr(request.state, "api_key_id", "anon")
+    counter_incremented = False
     if settings.max_concurrent_runs_per_key > 0:
         async with _get_active_runs_lock():
             active = _active_runs.get(api_key_id, 0)
@@ -126,59 +127,69 @@ async def start_run(
                     detail=f"Too many concurrent runs ({active}). Wait for existing runs to finish.",
                 )
             _active_runs[api_key_id] = active + 1
+            counter_incremented = True
 
-    goal = validate_goal(body.goal)
-    context = validate_run_context(body.context)
-    if body.stream_tokens:
-        context = {**(context or {}), "_stream_tokens": True}
-    profile_id = validate_agent_profile_id(body.agent_profile_id)
-    run = await create_run(
-        goal=goal,
-        agent_profile_id=profile_id,
-        context=context,
-        api_key_id=api_key_id if api_key_id != "anon" else None,
-    )
-
-    # Store idempotency mapping after run is persisted
-    if idempotency_key:
-        db = SessionLocal()
-        try:
-            store_idempotency_key(db, idempotency_key, run.run_id)
-        finally:
-            db.close()
-
-    enqueued = await enqueue_run(
-        run_id=run.run_id,
-        goal=goal,
-        agent_profile_id=profile_id,
-        context=context,
-    )
-    if not enqueued:
-        req_id = getattr(request.state, "request_id", None)
-        llm_manager = request.app.state.container.get_llm_manager()
-        asyncio.create_task(
-            _tracked_planner(
-                api_key_id=api_key_id,
-                run_id=run.run_id,
-                goal=goal,
-                agent_profile_id=profile_id,
-                context=context,
-                request_id=req_id,
-                llm_manager=llm_manager,
-            )
+    try:
+        goal = validate_goal(body.goal)
+        context = validate_run_context(body.context)
+        if body.stream_tokens:
+            context = {**(context or {}), "_stream_tokens": True}
+        profile_id = validate_agent_profile_id(body.agent_profile_id)
+        run = await create_run(
+            goal=goal,
+            agent_profile_id=profile_id,
+            context=context,
+            api_key_id=api_key_id if api_key_id != "anon" else None,
         )
-    else:
-        # Run is enqueued to worker — decrement counter immediately since worker tracks separately
-        async with _get_active_runs_lock():
-            _active_runs[api_key_id] = max(0, _active_runs.get(api_key_id, 1) - 1)
-    return RunResponse(
-        run_id=run.run_id,
-        status=RunStatus(run.status),
-        goal=run.goal,
-        agent_profile_id=run.agent_profile_id,
-        created_at=run.created_at.isoformat() if run.created_at else None,
-        message="Run started. Poll GET /runs/{run_id} for status and result.",
-    )
+
+        # Store idempotency mapping after run is persisted
+        if idempotency_key:
+            db = SessionLocal()
+            try:
+                store_idempotency_key(db, idempotency_key, run.run_id)
+            finally:
+                db.close()
+
+        enqueued = await enqueue_run(
+            run_id=run.run_id,
+            goal=goal,
+            agent_profile_id=profile_id,
+            context=context,
+        )
+        if not enqueued:
+            req_id = getattr(request.state, "request_id", None)
+            llm_manager = request.app.state.container.get_llm_manager()
+            asyncio.create_task(
+                _tracked_planner(
+                    api_key_id=api_key_id,
+                    run_id=run.run_id,
+                    goal=goal,
+                    agent_profile_id=profile_id,
+                    context=context,
+                    request_id=req_id,
+                    llm_manager=llm_manager,
+                )
+            )
+        else:
+            # Run is enqueued to worker — decrement counter immediately since worker tracks separately
+            if counter_incremented:
+                async with _get_active_runs_lock():
+                    _active_runs[api_key_id] = max(0, _active_runs.get(api_key_id, 1) - 1)
+                counter_incremented = False
+
+        return RunResponse(
+            run_id=run.run_id,
+            status=RunStatus(run.status),
+            goal=run.goal,
+            agent_profile_id=run.agent_profile_id,
+            created_at=run.created_at.isoformat() if run.created_at else None,
+            message="Run started. Poll GET /runs/{run_id} for status and result.",
+        )
+    except Exception:
+        if counter_incremented:
+            async with _get_active_runs_lock():
+                _active_runs[api_key_id] = max(0, _active_runs.get(api_key_id, 1) - 1)
+        raise
 
 
 @router.post(
@@ -212,7 +223,7 @@ async def approve_run(
         from app.core.run_webhooks import notify_run_terminal as _notify_webhook
         asyncio.create_task(_notify_webhook(run_id, run.goal, "failed", api_key_id=run.api_key_id, error="Tool call rejected by user"))
         return {"run_id": run_id, "status": "failed", "message": "Rejected."}
-    approver_id = request.headers.get("X-API-Key", "unknown")
+    approver_id = getattr(request.state, "api_key_id", None) or "unknown"
     ok = await execute_approved_tool_and_update_run(
         run_id,
         modified_arguments=body.modified_arguments,
@@ -450,6 +461,7 @@ async def start_run_from_template(
 
     # Guard: max concurrent runs per API key (same as POST /run)
     api_key_id = getattr(request.state, "api_key_id", "anon")
+    counter_incremented = False
     if settings.max_concurrent_runs_per_key > 0:
         async with _get_active_runs_lock():
             active = _active_runs.get(api_key_id, 0)
@@ -459,51 +471,60 @@ async def start_run_from_template(
                     detail=f"Too many concurrent runs ({active}). Wait for existing runs to finish.",
                 )
             _active_runs[api_key_id] = active + 1
+            counter_incremented = True
 
-    context: dict = {}
-    if body.stream_tokens:
-        context["_stream_tokens"] = True
+    try:
+        context: dict = {}
+        if body.stream_tokens:
+            context["_stream_tokens"] = True
 
-    profile_id = validate_agent_profile_id(agent_profile_id)
-    run = await create_run(
-        goal=goal,
-        agent_profile_id=profile_id,
-        context=context,
-        api_key_id=api_key_id if api_key_id != "anon" else None,
-    )
-
-    enqueued = await enqueue_run(
-        run_id=run.run_id,
-        goal=goal,
-        agent_profile_id=profile_id,
-        context=context,
-    )
-    if not enqueued:
-        req_id = getattr(request.state, "request_id", None)
-        llm_manager = request.app.state.container.get_llm_manager()
-        asyncio.create_task(
-            _tracked_planner(
-                api_key_id=api_key_id,
-                run_id=run.run_id,
-                goal=goal,
-                agent_profile_id=profile_id,
-                context=context,
-                request_id=req_id,
-                llm_manager=llm_manager,
-            )
+        profile_id = validate_agent_profile_id(agent_profile_id)
+        run = await create_run(
+            goal=goal,
+            agent_profile_id=profile_id,
+            context=context,
+            api_key_id=api_key_id if api_key_id != "anon" else None,
         )
-    else:
-        async with _get_active_runs_lock():
-            _active_runs[api_key_id] = max(0, _active_runs.get(api_key_id, 1) - 1)
 
-    return RunResponse(
-        run_id=run.run_id,
-        status=RunStatus(run.status),
-        goal=run.goal,
-        agent_profile_id=run.agent_profile_id,
-        created_at=run.created_at.isoformat() if run.created_at else None,
-        message=f"Run started from template '{template_name}'. Poll GET /runs/{{run_id}} for status.",
-    )
+        enqueued = await enqueue_run(
+            run_id=run.run_id,
+            goal=goal,
+            agent_profile_id=profile_id,
+            context=context,
+        )
+        if not enqueued:
+            req_id = getattr(request.state, "request_id", None)
+            llm_manager = request.app.state.container.get_llm_manager()
+            asyncio.create_task(
+                _tracked_planner(
+                    api_key_id=api_key_id,
+                    run_id=run.run_id,
+                    goal=goal,
+                    agent_profile_id=profile_id,
+                    context=context,
+                    request_id=req_id,
+                    llm_manager=llm_manager,
+                )
+            )
+        else:
+            if counter_incremented:
+                async with _get_active_runs_lock():
+                    _active_runs[api_key_id] = max(0, _active_runs.get(api_key_id, 1) - 1)
+                counter_incremented = False
+
+        return RunResponse(
+            run_id=run.run_id,
+            status=RunStatus(run.status),
+            goal=run.goal,
+            agent_profile_id=run.agent_profile_id,
+            created_at=run.created_at.isoformat() if run.created_at else None,
+            message=f"Run started from template '{template_name}'. Poll GET /runs/{{run_id}} for status.",
+        )
+    except Exception:
+        if counter_incremented:
+            async with _get_active_runs_lock():
+                _active_runs[api_key_id] = max(0, _active_runs.get(api_key_id, 1) - 1)
+        raise
 
 
 @router.get("/mcp/servers")
@@ -539,3 +560,14 @@ async def list_mcp_servers(
         return {"connected": connected, "servers": servers}
     except Exception:
         return {"connected": False, "servers": []}
+
+
+
+
+
+
+
+
+
+
+

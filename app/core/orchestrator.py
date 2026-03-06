@@ -84,7 +84,13 @@ class Orchestrator:
                 # Execute with sandbox limits
                 start_time = time.time()
                 with sandbox.execute_with_limits(selected_agent.agent_id, "execute"):
-                    result = await selected_agent.execute(task, context)
+                    timeout_seconds = limits.max_execution_time if limits.max_execution_time > 0 else None
+                    if timeout_seconds is not None:
+                        result = await asyncio.wait_for(
+                            selected_agent.execute(task, context), timeout=timeout_seconds
+                        )
+                    else:
+                        result = await selected_agent.execute(task, context)
 
                     # Save execution history
                     try:
@@ -302,7 +308,11 @@ class Orchestrator:
             )
         start_time = time.time()
         with sandbox.execute_with_limits(agent.agent_id, "execute"):
-            result = await agent.execute(task, context)
+            timeout_seconds = limits.max_execution_time if limits.max_execution_time > 0 else None
+            if timeout_seconds is not None:
+                result = await asyncio.wait_for(agent.execute(task, context), timeout=timeout_seconds)
+            else:
+                result = await agent.execute(task, context)
         try:
             execution_time_ms = (time.time() - start_time) * 1000
             await save_execution_history(result, execution_time_ms=execution_time_ms)
@@ -321,3 +331,8 @@ def _summarize_results(results: List[AgentResult]) -> List[Dict[str, Any]]:
         }
         for r in results
     ]
+
+
+
+
+

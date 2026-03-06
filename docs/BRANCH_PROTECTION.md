@@ -17,3 +17,9 @@ CHECKS="Tests / lint,Tests / test,Staging Reliability Gate / reliability-gate,Ba
 Notes:
 - Requires `gh auth login` with permissions to administer branch protection.
 - Check context names are case-sensitive and must match GitHub check names exactly.
+
+## CODEOWNERS
+
+- Ensure `.github/CODEOWNERS` exists and includes valid owners.
+- The protection script enforces `require_code_owner_reviews=true`.
+- With code owner reviews enabled, GitHub auto-requests reviews from owners for matching paths.

@@ -351,6 +351,7 @@ class TestApiKeyRouteModels:
 
     def test_create_request_rejects_negative_cap(self):
         import pydantic
+
         from app.api.v1.routes.api_keys import CreateKeyRequest
 
         with pytest.raises(pydantic.ValidationError):
@@ -370,3 +371,4 @@ class TestApiKeyRouteModels:
             max_monthly_cost_usd=42.0,
         )
         assert resp.max_monthly_cost_usd == 42.0
+

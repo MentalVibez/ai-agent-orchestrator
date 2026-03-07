@@ -1,0 +1,14 @@
+# CODEOWNERS
+# GitHub automatically requests review from listed owners when matching files change.
+
+# Default owner for all repository content
+* @MentalVibez
+
+# CI/CD and release governance
+/.github/workflows/ @MentalVibez
+/scripts/ @MentalVibez
+/docs/ @MentalVibez
+
+# Core runtime and security-sensitive areas
+/app/core/ @MentalVibez
+/app/api/ @MentalVibez

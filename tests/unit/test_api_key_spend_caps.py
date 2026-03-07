@@ -7,6 +7,7 @@ Tests:
 - CreateKeyRequest API validation (ge=0)
 - KeyInfoResponse includes max_monthly_cost_usd
 """
+# ruff: noqa: I001
 
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -351,6 +352,7 @@ class TestApiKeyRouteModels:
 
     def test_create_request_rejects_negative_cap(self):
         import pydantic
+
         from app.api.v1.routes.api_keys import CreateKeyRequest
 
         with pytest.raises(pydantic.ValidationError):
@@ -370,3 +372,4 @@ class TestApiKeyRouteModels:
             max_monthly_cost_usd=42.0,
         )
         assert resp.max_monthly_cost_usd == 42.0
+

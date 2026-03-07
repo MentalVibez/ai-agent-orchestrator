@@ -7,6 +7,7 @@ Tests:
 - CreateKeyRequest API validation (ge=0)
 - KeyInfoResponse includes max_monthly_cost_usd
 """
+# ruff: noqa: I001
 
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch

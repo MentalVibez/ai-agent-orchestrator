@@ -1,4 +1,5 @@
 """Unit tests for AuditLogMiddleware and GET /api/v1/admin/audit."""
+# ruff: noqa: I001
 
 import json
 from datetime import datetime, timezone

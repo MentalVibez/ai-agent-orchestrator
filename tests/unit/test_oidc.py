@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
-from starlette.datastructures import Headers
 from starlette.requests import Request
 from starlette.types import Scope
 
@@ -378,3 +377,4 @@ class TestOidcIntegrationWithAuth:
         from app.core.oidc import _get_jwks
 
         assert callable(_get_jwks)
+

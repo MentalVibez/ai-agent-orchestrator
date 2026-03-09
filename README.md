@@ -190,6 +190,20 @@ curl -X POST https://api.yourdomain.com/api/v1/admin/keys \
 
 ---
 
+## Reliability Gates
+
+Automated production-safety checks now include:
+
+- `Staging Reliability Gate` workflow: API + worker + Postgres + Redis smoke + failure drills
+- `Backup Restore Gate` workflow: nightly backup/restore integrity verification
+
+Branch protection can be applied with:
+
+```bash
+GH_REPO=MentalVibez/ai-agent-orchestrator ./scripts/set-branch-protection.sh
+```
+
+See `docs/BRANCH_PROTECTION.md` for details.
 ## API Endpoints
 
 All endpoints require `X-API-Key: <your-key>` header (unless `REQUIRE_API_KEY=false`).
@@ -616,3 +630,4 @@ Free for commercial and personal use. Modify and distribute freely. Attribution 
 ## Support
 
 Open an issue on the repository for bugs, questions, or feature requests.
+

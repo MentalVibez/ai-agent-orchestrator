@@ -1,7 +1,7 @@
 """Unit tests for AuditLogMiddleware and GET /api/v1/admin/audit."""
+# ruff: noqa: I001
 
 import json
-import threading
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -337,3 +337,4 @@ class TestAdminAuditRoutes:
             "/api/v1/admin/audit", headers={"X-API-Key": viewer_key}
         )
         assert resp.status_code == 403
+

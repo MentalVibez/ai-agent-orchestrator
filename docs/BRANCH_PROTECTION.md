@@ -10,7 +10,7 @@ Optional: override required check contexts:
 
 ```bash
 GH_REPO=MentalVibez/ai-agent-orchestrator \
-CHECKS="Tests / lint,Tests / test,Staging Reliability Gate / reliability-gate,Backup Restore Gate / backup-restore" \
+CHECKS="Tests / lint,Tests / test (3.11),Tests / test (3.12),Tests / security" \
 ./scripts/set-branch-protection.sh
 ```
 
@@ -23,3 +23,4 @@ Notes:
 - Ensure `.github/CODEOWNERS` exists and includes valid owners.
 - The protection script enforces `require_code_owner_reviews=true`.
 - With code owner reviews enabled, GitHub auto-requests reviews from owners for matching paths.
+

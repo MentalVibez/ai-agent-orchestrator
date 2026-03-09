@@ -10,7 +10,7 @@
 #
 # Usage:
 #   GH_REPO=owner/repo ./scripts/set-branch-protection.sh
-#   GH_REPO=owner/repo CHECKS="Tests / lint,Tests / test,Staging Reliability Gate / reliability-gate" ./scripts/set-branch-protection.sh
+#   GH_REPO=owner/repo CHECKS="Tests / lint,Tests / test (3.11),Tests / test (3.12),Tests / security" ./scripts/set-branch-protection.sh
 # =============================================================================
 set -euo pipefail
 
@@ -32,7 +32,7 @@ fi
 BRANCH="${BRANCH:-main}"
 
 # Comma-separated check contexts; tune for your repo's exact check names.
-DEFAULT_CHECKS="Tests / lint,Tests / test,Staging Reliability Gate / reliability-gate,Backup Restore Gate / backup-restore"
+DEFAULT_CHECKS="Tests / lint,Tests / test (3.11),Tests / test (3.12),Tests / security"
 CHECKS="${CHECKS:-$DEFAULT_CHECKS}"
 
 # Convert comma-separated string to JSON array objects: [{"context":"..."}, ...]
@@ -74,4 +74,5 @@ gh api \
   --input - <<< "$payload"
 
 echo "Branch protection applied successfully."
+
 

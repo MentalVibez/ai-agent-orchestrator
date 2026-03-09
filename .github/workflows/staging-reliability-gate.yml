@@ -7,6 +7,9 @@ on:
     branches: [ main, develop ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   reliability-gate:
     runs-on: ubuntu-latest
@@ -46,6 +49,8 @@ jobs:
       OLLAMA_BASE_URL: http://localhost:11434
       DEBUG: "false"
       WEBHOOK_REQUIRE_AUTH: "false"
+      METRICS_TOKEN: ci-metrics-token
+      WEBHOOK_SECRET: ci-webhook-secret
       POSTGRES_CID: ${{ job.services.postgres.id }}
       REDIS_CID: ${{ job.services.redis.id }}
 
@@ -63,6 +68,20 @@ jobs:
 
       - name: Apply DB migrations
         run: alembic upgrade head
+
+      - name: Disable MCP servers for CI startup
+        run: |
+          python - <<'PY'
+          import yaml
+          p = 'config/mcp_servers.yaml'
+          with open(p, 'r', encoding='utf-8') as f:
+              data = yaml.safe_load(f) or {}
+          for cfg in (data.get('mcp_servers') or {}).values():
+              if isinstance(cfg, dict):
+                  cfg['enabled'] = False
+          with open(p, 'w', encoding='utf-8') as f:
+              yaml.safe_dump(data, f, sort_keys=False)
+          PY
 
       - name: Start API and worker
         run: |

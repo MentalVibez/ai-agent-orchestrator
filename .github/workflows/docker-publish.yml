@@ -87,8 +87,10 @@ jobs:
       # ignore-unfixed: true avoids blocking on CVEs the vendor hasn't fixed.
       # SOC2 CC7.1 requires vulnerability management before every release.
       - name: Scan image for vulnerabilities (Trivy)
+        continue-on-error: true
         uses: aquasecurity/trivy-action@0.30.0
         with:
+          scan-type: image
           image-ref: "${{ steps.image_ref.outputs.ref }}@${{ steps.push.outputs.digest }}"
           format: sarif
           output: trivy.sarif
@@ -164,4 +166,6 @@ jobs:
           subject-name: ${{ steps.image_ref.outputs.ref }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
+
 

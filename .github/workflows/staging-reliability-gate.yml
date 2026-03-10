@@ -51,8 +51,6 @@ jobs:
       WEBHOOK_REQUIRE_AUTH: "false"
       METRICS_TOKEN: ci-metrics-token
       WEBHOOK_SECRET: ci-webhook-secret
-      POSTGRES_CID: ${{ job.services.postgres.id }}
-      REDIS_CID: ${{ job.services.redis.id }}
 
     steps:
       - uses: actions/checkout@v4
@@ -140,6 +138,8 @@ jobs:
           exit 1
 
       - name: Failure drill - Postgres interruption and recovery
+        env:
+          POSTGRES_CID: ${{ job.services.postgres.id }}
         run: |
           set -euo pipefail
 
@@ -166,6 +166,8 @@ jobs:
           exit 1
 
       - name: Failure drill - Redis interruption fallback
+        env:
+          REDIS_CID: ${{ job.services.redis.id }}
         run: |
           set -euo pipefail
 
@@ -217,3 +219,5 @@ jobs:
         run: |
           kill "$(cat api.pid)" 2>/dev/null || true
           kill "$(cat worker.pid)" 2>/dev/null || true
+
+

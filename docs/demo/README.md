@@ -1,8 +1,9 @@
 # Portfolio Demo Pack
 
-This folder contains a ready-to-share demo asset:
+This folder contains ready-to-share demo assets:
 
 - `portfolio-demo.html` - standalone visual demo page for users, recruiters, and hiring managers.
+- `portfolio-case-study.md` - one-page recruiter-facing case study with production-readiness narrative.
 
 ## Quick use
 
@@ -10,6 +11,7 @@ This folder contains a ready-to-share demo asset:
    - `docs/demo/portfolio-demo.html`
 2. Capture 3-4 screenshots (hero, flow, architecture, KPI cards).
 3. Add those screenshots to your portfolio website with a link to the GitHub repo.
+4. Publish or reference `docs/demo/portfolio-case-study.md` as the project write-up.
 
 ## Optional hosting
 

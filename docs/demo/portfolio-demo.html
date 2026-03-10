@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Agent Orchestrator - Product Demo</title>
+  <style>
+    :root {
+      --bg: #f6f4ef;
+      --ink: #1f1f1f;
+      --muted: #5f5c55;
+      --panel: #fffefb;
+      --line: #d5cec0;
+      --accent: #006d5b;
+      --accent-2: #a04200;
+      --shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 10%, #fff8df 0%, transparent 35%),
+        radial-gradient(circle at 90% 20%, #dceee9 0%, transparent 28%),
+        var(--bg);
+      line-height: 1.45;
+    }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 18px 50px; }
+    .hero {
+      background: linear-gradient(135deg, #fffefb 0%, #f3efe5 100%);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+    }
+    .eyebrow {
+      display: inline-block;
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      border: 1px solid #9fc4bb;
+      padding: 5px 9px;
+      border-radius: 999px;
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(1.8rem, 5vw, 3rem);
+      line-height: 1.07;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+      letter-spacing: -.02em;
+    }
+    .lead { color: var(--muted); max-width: 78ch; margin-top: 10px; }
+    .grid { display: grid; gap: 16px; margin-top: 18px; }
+    .grid.cards { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+    .card h3 { margin: 0 0 7px; font-size: 1rem; }
+    .card p { margin: 0; color: var(--muted); font-size: .94rem; }
+    .section-title {
+      margin: 26px 0 10px;
+      font-size: 1.35rem;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+    }
+    .timeline { display: grid; gap: 10px; }
+    .step {
+      display: grid;
+      grid-template-columns: 38px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+    }
+    .num {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: grid; place-items: center;
+      background: var(--accent); color: #fff; font-weight: 700;
+      font-size: 14px;
+    }
+    .kpi {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .kpi .tile {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      padding: 12px;
+    }
+    .kpi .value {
+      font-size: 1.45rem;
+      font-weight: 700;
+      color: var(--accent-2);
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+    }
+    .kpi .label { color: var(--muted); font-size: .88rem; }
+    code {
+      background: #f3efe4;
+      border: 1px solid #e0d7c6;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .9em;
+    }
+    pre {
+      margin: 0;
+      background: #1c1f24;
+      color: #dce5f2;
+      padding: 14px;
+      border-radius: 12px;
+      overflow: auto;
+      font-size: .88rem;
+    }
+    .footer {
+      margin-top: 26px;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <span class="eyebrow">Portfolio Demo</span>
+      <h1>AI Agent Orchestrator</h1>
+      <p class="lead">
+        A production-focused multi-agent platform for diagnostics, automation, and governed AI operations.
+        This demo shows what users see, what operators control, and what reliability guarantees are enforced.
+      </p>
+      <div class="grid cards">
+        <article class="card">
+          <h3>Core Value</h3>
+          <p>Turns plain-language goals into structured, auditable runs with policy controls and fail-safe behavior.</p>
+        </article>
+        <article class="card">
+          <h3>Who Uses It</h3>
+          <p>Ops teams, IT engineers, and platform teams managing runbooks, incidents, and agent-driven diagnostics.</p>
+        </article>
+        <article class="card">
+          <h3>Proof Points</h3>
+          <p>Branch protection, required checks, staged reliability gate, backup/restore gate, and explicit cost controls.</p>
+        </article>
+      </div>
+    </section>
+
+    <h2 class="section-title">Live User Flow (3 Minutes)</h2>
+    <section class="timeline">
+      <article class="step"><div class="num">1</div><div><strong>Create a run:</strong> user posts a goal to <code>/api/v1/run</code> with an API key.</div></article>
+      <article class="step"><div class="num">2</div><div><strong>Planner orchestration:</strong> system chooses agent actions and tool calls with safety checks.</div></article>
+      <article class="step"><div class="num">3</div><div><strong>Trace + events:</strong> run status, events, and errors stream to persistent records for auditing.</div></article>
+      <article class="step"><div class="num">4</div><div><strong>Operational safeguards:</strong> budget caps, auth/rbac, idempotency, and retry/circuit-breakers enforce control.</div></article>
+      <article class="step"><div class="num">5</div><div><strong>Outcome:</strong> run completes/fails/cancels with explicit reason and recoverable state.</div></article>
+    </section>
+
+    <h2 class="section-title">Architecture Snapshot</h2>
+    <div class="grid cards">
+      <article class="card"><h3>API Layer</h3><p>FastAPI routes with auth, validation, and run lifecycle endpoints.</p></article>
+      <article class="card"><h3>Planner + Agents</h3><p>Goal-to-action orchestration with specialized agent profiles and tool routing.</p></article>
+      <article class="card"><h3>State + Events</h3><p>Run store, event log, queue/worker execution, and traceability for every decision.</p></article>
+      <article class="card"><h3>Reliability Controls</h3><p>Migrations checks, reliability gate drills, backup/restore gate, and protected main branch.</p></article>
+    </div>
+
+    <h2 class="section-title">Demo Script (Terminal)</h2>
+    <pre># 1) Health
+curl -H "X-API-Key: $API_KEY" http://localhost:8000/api/v1/health
+
+# 2) Start a run
+curl -X POST http://localhost:8000/api/v1/run \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"goal":"Diagnose high memory usage on worker node","agent_profile_id":"default"}'
+
+# 3) Poll run status
+curl -H "X-API-Key: $API_KEY" http://localhost:8000/api/v1/runs/&lt;run_id&gt;
+
+# 4) View run history
+curl -H "X-API-Key: $API_KEY" http://localhost:8000/api/v1/runs</pre>
+
+    <h2 class="section-title">Portfolio KPIs You Can Claim</h2>
+    <section class="kpi">
+      <article class="tile"><div class="value">Multi-Agent</div><div class="label">Planner, diagnostics, infra, logs, code review agents</div></article>
+      <article class="tile"><div class="value">Governed</div><div class="label">API key RBAC, spend caps, audit logging, branch protections</div></article>
+      <article class="tile"><div class="value">Resilient</div><div class="label">Staging reliability drills + backup/restore validation</div></article>
+      <article class="tile"><div class="value">Deployable</div><div class="label">Docker image pipeline, SBOM, signing, migration checks</div></article>
+    </section>
+
+    <p class="footer">
+      Tip for portfolio site: embed this page as an iframe or copy sections into your case-study page with screenshots/GIFs from a real run.
+    </p>
+  </main>
+</body>
+</html>

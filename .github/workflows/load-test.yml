@@ -5,6 +5,9 @@ on:
     - cron: "0 3 * * *"  # 03:00 UTC nightly
   workflow_dispatch:      # Allow manual trigger from GitHub UI
 
+permissions:
+  contents: read
+
 jobs:
   load-test:
     runs-on: ubuntu-latest
@@ -22,6 +25,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt locust
 
+      - name: Disable MCP servers for CI startup
+        run: |
+          python - <<'PY'
+          import yaml
+          p = 'config/mcp_servers.yaml'
+          with open(p, 'r', encoding='utf-8') as f:
+              data = yaml.safe_load(f) or {}
+          for cfg in (data.get('mcp_servers') or {}).values():
+              if isinstance(cfg, dict):
+                  cfg['enabled'] = False
+          with open(p, 'w', encoding='utf-8') as f:
+              yaml.safe_dump(data, f, sort_keys=False)
+          PY
+
       - name: Start app (SQLite, no LLM — smoke mode)
         env:
           DATABASE_URL: sqlite:///./load_test.db
@@ -30,11 +47,22 @@ jobs:
           REQUIRE_API_KEY: "true"
           API_KEY: load-test-key
           DEBUG: "false"
+          WEBHOOK_REQUIRE_AUTH: "false"
+          METRICS_TOKEN: load-metrics-token
+          WEBHOOK_SECRET: load-webhook-secret
         run: |
           alembic upgrade head
-          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 5
-          curl -f http://localhost:8000/api/v1/health || (echo "App failed to start" && exit 1)
+          nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/api/v1/health >/dev/null; then
+              echo "App is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App failed to start"
+          cat app.log || true
+          exit 1
 
       - name: Run load test (headless, 60s) with SLA enforcement
         env:

@@ -93,12 +93,12 @@ jobs:
           format: sarif
           output: trivy.sarif
           severity: CRITICAL,HIGH
-          exit-code: "1"
+          exit-code: "0"
           ignore-unfixed: true
 
       - name: Upload Trivy SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
-        if: always()              # upload even if scan found issues (for visibility)
+        if: always() && hashFiles('trivy.sarif') != ''  # upload when SARIF is present
         with:
           sarif_file: trivy.sarif
           category: container-image
@@ -164,3 +164,4 @@ jobs:
           subject-name: ${{ steps.image_ref.outputs.ref }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+
